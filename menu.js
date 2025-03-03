@@ -7,26 +7,17 @@ async function main() {
 
     while (true) {
         console.log("\nMain Menu");
-        console.log("0. Students in Class");
-        console.log("1. Team Status");
-        console.log("2. Students in Team");
-        console.log("3. Review Unsubmitted");   //  ATTN:   what the diff from 3 and 8
-        console.log("4. Delete old Announcements");
-        console.log("6. Clear Cache");
-        console.log("7. Set Colors");
-        console.log("8. Send Missing Assignment Letters");  //  ATTN:  not showing scores
-        console.log("9. Send Letter to 1 student"); //  ATTN:  failed
-        console.log("10. Send Letters to a Class");
-        console.log("11. Change School and Class");
+        console.log("1. Team Members        2. Students in Team");
+        console.log("3. List Unsubmitted    4. Missing Assignment Letters");  //  ATTN:  not showing scores
+        console.log("5. Message 1 student   6. Message Class");
+        console.log("10. Set School and Class");
         console.log("E(x)it");
 
         const choice = await askQuestion("Enter your choice: ");
 
         switch (choice) {
-            case 'x':
-                process.exit();
             case '0':
-                await c.studentsInClass(getCourseId());
+                await c.studentsInClass(getCourseId);
                 break;
             case '1':
                 await c.listTeamMembers(getCourseId());
@@ -35,40 +26,32 @@ async function main() {
                 await c.studentInTeam(getCourseId());
                 break;
             case '3':
-                await c.reviewUnsubmitted(getCourseId());
+                await c.listUnsubmitted(getCourseId());
                 break;
             case '4':
-                await c.listAnnouncements(getCourseId());
-                break;
-            case '5':
-                await g.renameGroups(getCourseId());
-                break;
-            case '6':
-                c.clearCache();
-                break;
-            case '7':
-                const color = await askQuestion("Enter 0-8: ");
-                c.setColor(color);
-                break;
-            case '8':
                 await c.sendStatusLetters(getCourseId());
                 break;
-            case '9':
+            case '5':
                 const studentId = await askQuestion("Student Id: ");
                 const subject   = await askQuestion("Subject: ");
                 const body      = await askQuestion("Body: ");
                 await sendMessage(getCourseId(), [studentId], subject, body);
                 break;
-            case '10':
+            case '6':
                 const studentList   = await c.getStudents(c.courseId);
                 const studentIds    = studentList.map(student => student.id);
                 const classSubject  = await askQuestion("Subject: ");
                 const classBody     = await askQuestion("Body: ");
                 await sendMessage(getCourseId(), studentIds, classSubject, classBody);
                 break;
-            case '11':
+            // case '5':
+            //     await g.renameGroups(getCourseId());
+            //     break;
+            case '10':
                 await setParams()
-            default:
+            case 'x':
+                process.exit();
+                default:
                 console.log("Invalid choice, please try again.");
         }
     }

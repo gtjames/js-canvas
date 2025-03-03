@@ -82,13 +82,15 @@ async function listTeamMembers(courseId) {
     let grpType = await askQuestion("(1) Solo, (0) All, (u) Unassigned: ");
     while (grpType.length > 0) {
         let cnt = 0;
-        const courses = await getCategories(courseId);
+        const categories = await getCategories(courseId);
         
-        for (const course of courses) {
-            console.log(`${course.name}`);
+        for (const category of categories) {
+            if (category.name == "Who is Here")
+                continue;
+            console.log(`${category.name}`);
             
             if (grpType === "u") {
-                const members = await getUnassigned(course.id);
+                const members = await getUnassigned(category.id);
                 for (const member of members) {
                     await showStudent(member.id, member.name);
                 }
@@ -98,7 +100,7 @@ async function listTeamMembers(courseId) {
                     await sendMessage(courseId, studentIds, "You have not yet found a team", "Please identify a team that works for your schedule and add your name to the group");
                 }
             } else {
-                const groups = await getGroups(course.id);
+                const groups = await getGroups(category.id);
                 for (const group of groups) {
                     if (group.members_count === 0) continue;
                     if ((group.members_count === 1 && grpType === "1") || grpType === "0") {
@@ -117,8 +119,10 @@ async function studentInTeam(courseId) {
     let students = [];
     const categories = await getCategories(courseId);
     
-    for (const cat of categories) {
-        const groups = await getGroups(cat.id);
+    for (const category of categories) {
+        if (category.name == "Who is Here")
+            continue;
+        const groups = await getGroups(category.id);
         for (const group of groups) {
             if (group.members_count === 0) continue;
             
@@ -294,7 +298,7 @@ async function statusLetter(courseId, status, lo, hi, unfinishedAssignments, sub
         );
     };
 }
-async function reviewUnsubmitted(courseId) {
+async function listUnsubmitted(courseId) {
     const unfinishedAssignments = await getUnfinishedAssignments(courseId);
     const studentIds = new Set();
 
@@ -401,7 +405,7 @@ async function removeAnnouncements(courseId) {
 
 // Export the function
 module.exports = { clearCache, getAnnouncements, listAnnouncements, getAssignments,
-    getStudents, getStudent, showStudent, getScores, listTeamMembers, studentInTeam, studentsInClass, 
-    listMembers, getGroups, getGroupMembers, getUnassigned, removeAnnouncements,
-    sendStatusLetters, reviewUnsubmitted, getLastLogin, getUnfinishedAssignments, getCategories
+    getStudents, getStudent, showStudent, getScores, listTeamMembers, studentInTeam, 
+    listMembers, getGroups, getGroupMembers, getUnassigned, removeAnnouncements, studentsInClass,
+    sendStatusLetters, listUnsubmitted, getLastLogin, getUnfinishedAssignments, getCategories
 };
