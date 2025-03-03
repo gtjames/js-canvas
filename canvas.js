@@ -1,4 +1,4 @@
-const { askQuestion, getCanvasData, sendMessage, sortByAttr, getCourseId } = require('./utilities');
+const { askQuestion, getCanvasData, sendMessage, sortByAttr } = require('./utilities');
 
 const cache = {
     announcements: {},
@@ -115,10 +115,10 @@ async function listTeamMembers(courseId) {
 async function studentInTeam(courseId) {
     console.log(`studentInTeam`);
     let students = [];
-    const courses = await getCategories(courseId);
+    const categories = await getCategories(courseId);
     
-    for (const course of courses) {
-        const groups = await getGroups(course.id);
+    for (const cat of categories) {
+        const groups = await getGroups(cat.id);
         for (const group of groups) {
             if (group.members_count === 0) continue;
             
@@ -128,6 +128,7 @@ async function studentInTeam(courseId) {
                 const firstName = theRest.join(" ").split(" ")[0].padEnd(10).slice(0, 10);
                 const student   = await getStudent(member.id);
                 let   lastLogin = await getLastLogin(member.id);
+                lastLogin = lastLogin || "_____TNever";
                 lastLogin = lastLogin.replace('T', ' ').substring(5, 16)
                 
                 students.push({
@@ -238,7 +239,7 @@ async function getGroups(catId) {
 // Step 2: Get all groups within the specified group category
 async function getGroupMembers(groupId) {
     if (!cache.groupMembers[groupId]) {
-        cache.groupMembers[groupId] = await getCanvasData(`/groups/${groupId}/users`);
+        cache.groupMembers[groupId] = await getCanvasData(`/groups/${groupId}/users?per_page=70`);
     }
     return cache.groupMembers[groupId];
 }
@@ -401,6 +402,6 @@ async function removeAnnouncements(courseId) {
 // Export the function
 module.exports = { clearCache, getAnnouncements, listAnnouncements, getAssignments,
     getStudents, getStudent, showStudent, getScores, listTeamMembers, studentInTeam, studentsInClass, 
-    listMembers, getGroups, getGroupMembers, getUnassigned, getCategories, removeAnnouncements,
-    sendStatusLetters, reviewUnsubmitted, getLastLogin, getUnfinishedAssignments
+    listMembers, getGroups, getGroupMembers, getUnassigned, removeAnnouncements,
+    sendStatusLetters, reviewUnsubmitted, getLastLogin, getUnfinishedAssignments, getCategories
 };

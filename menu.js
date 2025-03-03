@@ -67,7 +67,7 @@ async function main() {
                 await sendMessage(getCourseId(), studentIds, classSubject, classBody);
                 break;
             case '11':
-                setParams()
+                await setParams()
             default:
                 console.log("Invalid choice, please try again.");
         }

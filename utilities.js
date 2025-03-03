@@ -23,7 +23,7 @@ try {
 }
 
 // Set up headers with authorization
-let headers = { 'Authorization': `Bearer ${API_KEY}`};
+let headers = {headers: { 'Authorization': `Bearer ${API_KEY}`}};
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -36,9 +36,12 @@ function setColor(rgb) {
 }
 
 async function setParams() {
-    school = await askQuestion("Enter School: ");
+    school   = await askQuestion("Enter School: ");
     courseId = await askQuestion("Enter Course: ");
-    setSchool(school);
+    school   = school   || "byupw";
+    courseId = courseId || "7113";
+
+    setURL(school);
     return courseId
 }
 
@@ -46,17 +49,24 @@ function getCourseId() {
     return courseId;
 }
 
-function setSchool(schoolId) {
-    school = schoolId || "byupw";
-    canvasURL = `https://${school}.instructure.com/api/v1`;
-    headers   = { Authorization: `Bearer ${data[school]}` };
+function getHeaders() {
+    return headers;
+}
+
+function getURL() {
+    return canvasURL;
+}
+
+function setURL(schoolId) {
+    canvasURL = `https://${schoolId}.instructure.com/api/v1`;
+    headers   = {headers: { Authorization: `Bearer ${data[schoolId]}` }};
 }
 
 function sortByAttr(data, attribute) {
     try {
         return data.sort((a, b) => {
-            if (a[attribute] < b[attribute]) return -1;
-            if (a[attribute] > b[attribute]) return 1;
+            if ((""+a[attribute]).toUpperCase() < (""+b[attribute]).toUpperCase()) return -1;
+            if ((""+a[attribute]).toUpperCase() > (""+b[attribute]).toUpperCase()) return 1;
             return 0;
         });
     } catch (error) {
@@ -91,7 +101,7 @@ async function sendMessage(courseId, studentId, subject, body) {
 
     try {
         // Make the request with URL parameters instead of a JSON body
-        await axios.post(`${canvasURL}/conversations?${params.toString()}`, {}, { headers });
+        await axios.post(`${canvasURL}/conversations?${params.toString()}`, {}, headers);
     } catch (error) {
         console.error("Error sending message:", error.response?.data || error.message);
     }
@@ -107,7 +117,8 @@ async function askQuestion(query) {
 
 async function getCanvasData(endpoint, params={}) {
     try {
-        const response = await axios.get(`${canvasURL}${endpoint}`, { headers }, {params});
+        // console.log(`${canvasURL}${endpoint}`);
+        const response = await axios.get(`${canvasURL}${endpoint}`, headers, {params});
         return response.data;
     } catch (error) {
         console.error("Error fetching data:", error.response?.data || error.message);
@@ -115,5 +126,16 @@ async function getCanvasData(endpoint, params={}) {
     }
 }
 
-module.exports = { askQuestion, getCanvasData, sendMessage, sortByAttr, 
-                getCourseId, setColor, setParams, setSchool }
+async function putCanvasData(endpoint, params={}) {
+    try {
+        // console.log(`${canvasURL}${endpoint}`);
+        const response = await axios.put(`${canvasURL}${endpoint}`, params, headers);
+        return response.data;
+    } catch (error) {
+        console.error("Error putting data:", error.response?.data || error.message);
+        return null;
+    }
+}
+
+module.exports = { askQuestion, getCanvasData, putCanvasData, sendMessage, sortByAttr, 
+                getCourseId, setColor, setParams, getURL, setURL, getHeaders};
