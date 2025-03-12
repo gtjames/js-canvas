@@ -7,7 +7,7 @@ async function main() {
 
     while (true) {
         console.log("\nMain Menu");
-        console.log("1. Team Members        2. Students in Team");
+        console.log("0.  Students in Class  1. Team Members       2. Students in Team");
         console.log("3. List Unsubmitted    4. Missing Assignment Letters");  //  ATTN:  not showing scores
         console.log("5. Message 1 student   6. Message Class");
         console.log("10. Set School and Class");
@@ -17,7 +17,7 @@ async function main() {
 
         switch (choice) {
             case '0':
-                await c.studentsInClass(getCourseId);
+                await c.studentsInClass(getCourseId());
                 break;
             case '1':
                 await c.listTeamMembers(getCourseId());

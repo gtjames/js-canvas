@@ -115,16 +115,17 @@ async function listTeamMembers(courseId) {
 }
 
 async function studentInTeam(courseId) {
-    console.log(`studentInTeam`);
     let students = [];
     const categories = await getCategories(courseId);
+    studentsInCourse = await getStudents(courseId)
     
     for (const category of categories) {
         if (category.name == "Who is Here")
             continue;
         const groups = await getGroups(category.id);
         for (const group of groups) {
-            if (group.members_count === 0) continue;
+            if (group.members_count === 0) 
+                continue;
             
             const members = await getGroupMembers(group.id);
             for (const member of members) {
@@ -132,40 +133,69 @@ async function studentInTeam(courseId) {
                 const firstName = theRest.join(" ").split(" ")[0].padEnd(10).slice(0, 10);
                 const student   = await getStudent(member.id);
                 let   lastLogin = await getLastLogin(member.id);
-                lastLogin = lastLogin || "_____TNever";
-                lastLogin = lastLogin.replace('T', ' ').substring(5, 16)
+                lastLogin = lastLogin || "2025-01-01T01:00:00-06:00";
                 
                 students.push({
-                    name:  member.name,
-                    first: firstName,
-                    last:  lastName.padEnd(15).slice(0, 15),
-                    id:    member.id,
-                    login: lastLogin,
-                    group: group.name.slice(0, 7),
-                    email: student.primary_email.padEnd(30),
-                    tz:    student.time_zone.padEnd(15).slice(0, 15)
+                    first:     firstName,
+                    last:      lastName.padEnd(15).slice(0, 15),
+                    id:        member.id,
+                    lastLogin: lastLogin,
+                    login:     lastLogin.replace('T', ' ').substring(5, 16),
+                    group:     group.name.slice(0, 7),
+                    email:     student.primary_email.padEnd(30),
+                    tz:        student.time_zone.padEnd(15).slice(0, 15)
                 });
             }
         }
     }
+
+    mergeStudents(students, studentsInCourse);
+    let notifyNoneParticipating = false
+    if (await askQuestion("Email Non Participating?: ") == 'y')
+        notifyNoneParticipating = true
+
     let group = "";
     let sortBy = await askQuestion("Sort By (first, last, group, login, email, id): ");
+    let size = 0;
     while (sortBy.length > 0) {
         students = sortByAttr(students, sortBy);
         for (const student of students) {
-            if (sortBy === "group" && group !== student.group) {
-                console.log(`\t\t${student.group}`);
-                group = student.group
-            }
             switch (sortBy) {
-                case    "id"    :
-                    console.log(`${student.id} : ${student.first} ${student.last} : ${student.email}`);
+                case    "group"     :
+                    if (group !== student.group) {
+                        if (size > 0)                        //  if so, print the group size
+                            console.log(`Members in Group ${size}`)
+                        console.log(`\t\t${student.group}`);
+                        group = student.group;
+                        size = 0;
+                    }
+                    size++;
+                    console.log(`${student["first"]} ${student["last"]} : ${student["email"]} : ${student["tz"]}`)
                     break;
-                case    "login"    :
-                    console.log(`${student.login} : ${student.first} ${student.last} : ${student.email}`);
+                case    "login"     :
+                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}`);
+            
+                    let lastLogin = new Date(student.lastLogin);
+                    let aWeekAgo = new Date();
+                    aWeekAgo.setDate(aWeekAgo.getDate() - 7);
+            
+                    if (lastLogin < aWeekAgo && notifyNoneParticipating) {
+                        sendMessage([student.id],
+                            "You have not participated in the class this week",
+                            "Please let me know if you are having trouble with the class"
+                        );
+                    }
+                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}`);
+                    break;
+                case    "id"        :
+                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}`);
+                    break;
+                case    "first"     :
+                case    "tz"        :
+                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.group} : ${student.tz}`);
                     break;
                 default :
-                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.tz}`);
+                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.id}`);
                     break;
             }
         }
@@ -173,6 +203,32 @@ async function studentInTeam(courseId) {
     }
 }
 
+function mergeStudents(students, studentsInCourse) {
+    // Create a Set of student IDs already in the students list
+    const studentIds = new Set(students.map(student => student.id));
+
+    // Iterate through studentsInCourse and add missing entries to students
+    studentsInCourse.forEach(student => {
+        if (!studentIds.has(student.id)) {
+            let [lastName, rest] = student.sortable_name.split(", ");
+            let firstName = rest.split(" ")[0].padEnd(10).slice(0, 10);
+            lastName = lastName.padEnd(15).slice(0, 15);
+
+            students.push({
+                id: student.id,
+                email: student.email.padEnd(30),
+                first: firstName,
+                last: lastName,
+                login: "01-01 00:00",
+                lastLogin: "2025-01-01T01:00:00-06:00",
+                group: "Not Yet",
+                tz: "Unknown"
+            });
+        }
+    });
+
+    return students;
+}
 async function studentsInClass(courseId) {
     let students = [];
     const studentList = await getStudents(courseId);
@@ -194,10 +250,7 @@ async function studentsInClass(courseId) {
     while (sortBy.length > 0) {
         students = sortByAttr(students, sortBy);
         for (const student of students) {
-            if (sortBy == "id")
-                console.log(`${student.first} ${student.last} : ${student.id}`);
-            else
-                console.log(`${student.first} ${student.last} : ${student.email}`);
+            console.log(`${student.first} ${student.last} : ${student.email} : ${student.id}`);
         }
         sortBy = await askQuestion("Sort By (first, last, email, id): ");
     }
@@ -285,11 +338,12 @@ async function statusLetter(courseId, status, lo, hi, unfinishedAssignments, sub
     let go = await askQuestion("go/no go? ");
 
     for( let s of studentList) {
-        console.log(`${s.name} - ${s.currentScore}`);
+        let missed = unfinishedAssignments[s.id]?.unsubmitted.map(a => `\t${a}`).join("\n") || "None";
+
+        console.log(`${s.name} - ${s.currentScore}\n${missed}`);
+
         if (go !== "go") 
             continue;
-
-        let missed = unfinishedAssignments[s.id]?.unsubmitted.map(a => `\t${a}`).join("\n") || "None";
 
         await sendMessage(courseId, 
             [s.id],
