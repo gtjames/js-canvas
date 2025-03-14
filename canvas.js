@@ -155,7 +155,7 @@ async function studentInTeam(courseId) {
         notifyNoneParticipating = true
 
     let group = "";
-    let sortBy = await askQuestion("Sort By (first, last, group, login, email, id): ");
+    let sortBy = await askQuestion("Sort By (first, last, group, login, tz, email, id): ");
     let size = 0;
     while (sortBy.length > 0) {
         students = sortByAttr(students, sortBy);

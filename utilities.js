@@ -84,11 +84,6 @@ async function sendMessage(courseId, studentId, subject, body) {
     //     "bulk_message":  false
     // };
 
-    const choice = await askQuestion("go?");
-    if (choice !== "y") {
-        return;
-    }
-
     // Encode the parameters for a URL query string
     const params = new URLSearchParams();
     studentId.forEach(id => params.append("recipients[]", id)); // Canvas API expects recipients[] as an array
@@ -96,8 +91,6 @@ async function sendMessage(courseId, studentId, subject, body) {
     params.append("body", body);
     params.append("context_code", `course_${courseId}`);
     params.append("bulk_message", "true");
-
-    console.log("Sending message with params:", params.toString());
 
     try {
         // Make the request with URL parameters instead of a JSON body
