@@ -20,8 +20,8 @@ function clearCache() {
 }
 
 async function startUp(courseId) {
-    await getCategories      (courseId)       //  _categories
     await getStudents (courseId)       //  _students
+    await getCategories      (courseId)       //  _categories
     // getGroups        (1706)           
     //    _groups
     // getUnassigned   (1706)               _unassigned
@@ -70,12 +70,12 @@ async function getStudents(courseId) {
         
             const   [lastName, rest] = student.sortable_name.split(", ");
             const   firstName = rest.split(" ")[0].padEnd(10).slice(0, 10);
-            const   tm  = scores[id]["activityTime"]
+            const   tm  = scores[student.id]["activityTime"]
             const   hrs = Math.floor(tm / 60).toString().padStart(3, " ");
             const   min = (tm % 60).toString().padStart(2, "0");
 
             student.group        = "Team XX";
-            student.lastActivity = scores[student.id]?.last_activity_at.replace('T', ' ').substring(5, 16),
+            student.lastActivity = scores[student.id]?.lastActivity.replace('T', ' ').substring(5, 16),
             student.score        = scores[student.id]?.score || "_";
             student.grade        = scores[student.id]?.grade || "_";
             student.lastLogin    = lastLogin;
@@ -97,7 +97,7 @@ async function getStudentProfile(studentId) {
 }
 
 async function getStudent(courseId, studentId) {
-    let studentRec = cache.students[courseId].find(student => parseInt(student.id) === studentId) || null;
+    let studentRec = cache.studentsByIds[courseId].find(student => student.id === studentId) || null;
     if (studentRec === null) {
         console.log(`    - ${studentId} not found`);
         studentRec = await getStudentProfile(studentId);
@@ -118,7 +118,7 @@ async function showStudent(courseId, studentId, name) {
 
 // Get group categories
 async function getCategories(courseId) {
-    let studentList = await getStudents(courseId);
+    let studentList = await getStudentsByIds(courseId);
 
     if (!cache.categories[courseId]) {
         cache.categories[courseId] = await getCanvasData(`/courses/${courseId}/group_categories`);
@@ -218,7 +218,7 @@ async function studentInTeam(courseId) {
     let sortBy = await askQuestion("Sort By (first, last, group, score, login, tz, email, id): ");
     let size = 0;
     while (sortBy.length > 0) {
-        [sortBy, students] = sortByAttr(students, sortBy);
+        [sortBy, students] = sortByAttr(studentsInCourse, sortBy);
         for (const student of students) {
             switch (sortBy) {
                 case    "group"     :
@@ -246,7 +246,6 @@ async function studentInTeam(courseId) {
                             "Please let me know if you are having trouble with the class"
                         );
                     }
-                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}`);
                     break;
                 case    "id"        :
                     console.log(`${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}`);
@@ -314,9 +313,9 @@ async function getGroupMembers(groupId) {
 }
 
 async function sendStatusLetters(courseId) {
-    studentList = getStudentsByIds(courseId)
-    unfinishedAssignments = getUnfinishedAssignments(courseId)
-    _, studentList = sortByAttr(studentList, "score")
+    let list             = await getStudentsByIds(courseId)
+    let unfinishedAssignments   = await getUnfinishedAssignments(courseId)
+    const [x, studentList]      = sortByAttr(list, "score");
 
     await statusLetter(courseId, studentList, 90, 100, unfinishedAssignments,
         "Keep up the good work!: Current Score: ",
@@ -330,21 +329,21 @@ async function sendStatusLetters(courseId) {
 }
 
 async function statusLetter(courseId, studentScores, lo, hi, unfinishedAssignments, subject, body) {
-    let studentList = studentScores.filter(student => lo < parseInt(student.currentScore) && parseInt(student.currentScore) < hi);
+    let studentList = studentScores.filter(student => lo < student.score && student.score < hi);
 
     let go = await askQuestion("go/no go? ");
 
     for( let s of studentList) {
-        let missed = unfinishedAssignments[s.id]?.unsubmitted.map(a => `\t${a}`).join("\n") || "None";
+        let missed = unfinishedAssignments[s.id]?.unsubmitted.map(a => `\t${a}`).join("\n") || "\tNone";
 
-        console.log(`${s.name} - ${s.currentScore}\n${missed}`);
+        console.log(`${s.name} - ${s.score}\n${missed}`);
 
         if (go !== "go") 
             continue;
 
         await sendMessage(courseId, 
             [s.id],
-            `${subject} ${s.currentScore}`,
+            `${subject} ${s.score}`,
             `\n${s.firstName},\n${body}\nMissing Assignments (if any)\n${missed}\n\nBro. James`
         );
     };
