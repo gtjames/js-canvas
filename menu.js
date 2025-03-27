@@ -1,13 +1,14 @@
 const c = require('./canvas');
 const { setParams, getCourseId, askQuestion, sendMessage } = require('./utilities');
-const g = require('./nameGroups');
+// const g = require('./nameGroups');
 
 async function main() {
     await setParams();
+    await c.startUp(getCourseId());
 
     while (true) {
         console.log("\nMain Menu");
-        console.log("0.  Students in Class  1. Team Members       2. Students in Team");
+        console.log("1. Team Members        2. Students in Team");
         console.log("3. List Unsubmitted    4. Missing Assignment Letters");  //  ATTN:  not showing scores
         console.log("5. Message 1 student   6. Message Class");
         console.log("10. Set School and Class");
@@ -16,9 +17,6 @@ async function main() {
         const choice = await askQuestion("Enter your choice: ");
 
         switch (choice) {
-            case '0':
-                await c.studentsInClass(getCourseId());
-                break;
             case '1':
                 await c.listTeamMembers(getCourseId());
                 break;
@@ -51,7 +49,7 @@ async function main() {
                 await setParams()
             case 'x':
                 process.exit();
-                default:
+            default:
                 console.log("Invalid choice, please try again.");
         }
     }

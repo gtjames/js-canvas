@@ -36,8 +36,12 @@ function setColor(rgb) {
 }
 
 async function setParams() {
-    school   = await askQuestion("Enter School: ");
-    courseId = await askQuestion("Enter Course: ");
+    if(process.argv.length > 2)
+        courseId = process.argv[2];
+    else {
+        school   = await askQuestion("Enter School: ");
+        courseId = await askQuestion("Enter Course: ");
+    }
     school   = school   || "byupw";
     courseId = courseId || "7113";
 
@@ -63,18 +67,23 @@ function setURL(schoolId) {
 }
 
 function sortByAttr(data, attribute) {
+    let descending = attribute.startsWith("-");
+    attribute = descending ? attribute.substring(1) : attribute;
+
     try {
-        return data.sort((a, b) => {
-            if ((""+a[attribute]).toUpperCase() < (""+b[attribute]).toUpperCase()) return -1;
-            if ((""+a[attribute]).toUpperCase() > (""+b[attribute]).toUpperCase()) return 1;
-            return 0;
-        });
+        return [attribute, [...data].sort((a, b) => {
+            let aValue = ("" + a[attribute]).toUpperCase();
+            let bValue = ("" + b[attribute]).toUpperCase();
+
+            let comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+
+            return descending ? -comparison : comparison;
+        })];
     } catch (error) {
         console.error(`Invalid attribute: ${attribute}`);
         return data;
     }
 }
-
 async function sendMessage(courseId, studentId, subject, body) {
     // const payload = {
     //     "recipients[]":  studentId.map(id => id.toString()), // Ensure IDs are strings

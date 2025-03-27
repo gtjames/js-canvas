@@ -4,17 +4,33 @@ const cache = {
     announcements: {},
     assignments: {},
     categories: {},
+    enrollments: {},
     groupMembers: {},
     groups: {},
     lastLogin: {},
     scores: {},
     students: {},
+    studentsByIds : {},
     submissionByStatus: {},
     unassigned: {},
 };
 
 function clearCache() {
     Object.keys(cache).forEach(key => cache[key] = {});
+}
+
+async function startUp(courseId) {
+    await getCategories      (courseId)       //  _categories
+    await getStudents (courseId)       //  _students
+    // getGroups        (1706)           
+    //    _groups
+    // getUnassigned   (1706)               _unassigned
+    // getGroupMembers(groupId)             _groupMembers  = {}
+    // getLastLogin(studentId)              _lastLogin     = {}
+    // getSubmissionByStatus(courseId, 425, 'unsubmitted')      _submissionByStatus
+    // getUnfinishedAssignments(courseId)    
+    // getAnnouncements(courseId)           _announcements
+    // getAssignments  (courseId)           _assignments
 }
 
 async function getAnnouncements(courseId) {
@@ -38,71 +54,130 @@ async function getAssignments(courseId) {
     return cache.assignments[courseId];
 }
 
+function getStudentsByIds(courseId) {
+    return cache.studentsByIds[courseId];
+} 
 async function getStudents(courseId) {
     if (!cache.students[courseId]) {
-        cache.students[courseId] = await getCanvasData(`/courses/${courseId}/users?enrollment_type[]=student&per_page=100`);
+        cache.studentsByIds[courseId] = await getCanvasData(`/courses/${courseId}/users?enrollment_type[]=student&per_page=100`);
+        cache.students[courseId] = []
+
+        scores = await getEnrollments(courseId);
+
+        for (const student of cache.studentsByIds[courseId]) {
+            const profile   = await getStudentProfile(student.id);
+            const lastLogin = await getLastLogin(student.id) || "2025-01-01T01:00:00-06:00";
+        
+            const   [lastName, rest] = student.sortable_name.split(", ");
+            const   firstName = rest.split(" ")[0].padEnd(10).slice(0, 10);
+            const   tm  = scores[id]["activityTime"]
+            const   hrs = Math.floor(tm / 60).toString().padStart(3, " ");
+            const   min = (tm % 60).toString().padStart(2, "0");
+
+            student.group        = "Team XX";
+            student.lastActivity = scores[student.id]?.last_activity_at.replace('T', ' ').substring(5, 16),
+            student.score        = scores[student.id]?.score || "_";
+            student.grade        = scores[student.id]?.grade || "_";
+            student.lastLogin    = lastLogin;
+            student.login        = lastLogin.replace('T', ' ').slice(5, 16);
+            student.first        = firstName.padEnd(10).slice(0, 10);
+            student.last         = lastName.padEnd(15).slice(0, 15);
+            student.email        = student.email.padEnd(30);
+            student.activityTime = `${hrs}.${min}`;
+            student.tz           = profile.time_zone;
+            cache.students[courseId][student.id] =student;
+
+        }
     }
     return cache.students[courseId];
 }
 
-async function getStudent(studentId) {
-    if (!cache.students[studentId]) {
-        const student = await getCanvasData(`/users/${studentId}/profile`);
-        cache.students[studentId] = student;
+async function getStudentProfile(studentId) {
+    return getCanvasData(`/users/${studentId}/profile`)
+}
+
+async function getStudent(courseId, studentId) {
+    let studentRec = cache.students[courseId].find(student => parseInt(student.id) === studentId) || null;
+    if (studentRec === null) {
+        console.log(`    - ${studentId} not found`);
+        studentRec = await getStudentProfile(studentId);
+        cache.students[courseId].push(studentRec);
     }
-    return cache.students[studentId];
+    return studentRec;
 }
 
 // Fetch student profile information
-async function showStudent(studentId, name) {
-    const student = await getStudent(studentId);
+async function showStudent(courseId, studentId, name) {
+    const student = await getStudent(courseId, studentId);
     if (student) {
-        const [lastName, rest] = student.sortable_name.split(", ");
-        const firstName = rest.split(" ")[0];
-        console.log(`\t- ${firstName.padEnd(10).slice(0, 10)} ${lastName.padEnd(15)} ${student.primary_email.padEnd(30)} ${student.time_zone}`);
+        console.log(`\t- ${student.first} ${student.last} ${student.email} ${student.tz}`);
+    } else {
+        console.log(`\t- ${name} has dropped the class`);
     }
 }
 
-async function getScores(courseId) {
-    if (!cache.scores[courseId]) {
-        const enrollments = await getCanvasData(`/courses/${courseId}/enrollments?per_page=100&type[]=StudentEnrollment`,{"per_page": 100}); // ATTN:
-        cache.scores[courseId] = enrollments?.map(student => ({
-            id:             student.user_id,
-            name:           student.user.name,
-            firstName:      student.user.name.split(" ")[0],
-            currentScore:   student.grades.current_score,
-            lastActivityAt: student.last_activity_at,
-            timeActive:     student.total_activity_time
-    })) || [];
+// Get group categories
+async function getCategories(courseId) {
+    let studentList = await getStudents(courseId);
+
+    if (!cache.categories[courseId]) {
+        cache.categories[courseId] = await getCanvasData(`/courses/${courseId}/group_categories`);
+
+        for (const category of cache.categories[courseId]) {
+            if (category.name === "Who is Here") continue;
+            
+            let groups = await getGroups(category.id);
+            for (const group of groups) {
+                if (group.members_count === 0) continue;
+                
+                let members = await getGroupMembers(group.id);
+                for (const member of members) {
+                    student = studentList.find(s => s.id === member.id) || null;
+                    student.group = group.name.slice(0, 7);
+                }
+            }
+        }
     }
-    return cache.scores[courseId];
+    
+    return cache.categories[courseId];
+}
+
+// Get unassigned students in a group category
+async function getUnassigned(groupId) {
+    if (!cache.unassigned[groupId]) {
+        cache.unassigned[groupId] = await getCanvasData(`/group_categories/${groupId}/users?unassigned=true&per_page=100`);
+    }
+    return cache.unassigned[groupId];
 }
 
 async function listTeamMembers(courseId) {
-    let grpType = await askQuestion("(1) Solo, (0) All, (u) Unassigned: ");
+    let categories = await getCategories(courseId);
+    let grpType    = await askQuestion("(1) Solo, (0) All, (u) Unassigned: ");
+    
     while (grpType.length > 0) {
         let cnt = 0;
-        const categories = await getCategories(courseId);
         
         for (const category of categories) {
-            if (category.name == "Who is Here")
-                continue;
+            if (category.name === "Who is Here") continue;
+            
             console.log(`${category.name}`);
             
             if (grpType === "u") {
-                const members = await getUnassigned(category.id);
+                let members = await getUnassigned(category.id);
                 for (const member of members) {
-                    await showStudent(member.id, member.name);
+                    await showStudent(courseId, member.id, member.name);
                 }
                 console.log(`${members.length} - unassigned`);
-                if (await askQuestion("Email the Unassigned? (y/n): ") === 'y') {
-                    const studentIds = members.map(student => student.id);
-                    await sendMessage(courseId, studentIds, "You have not yet found a team", "Please identify a team that works for your schedule and add your name to the group");
+                
+                if (await askQuestion("Email the Unassigned?: ") === 'y') {
+                    let studentIds = members.map(student => student.id);
+                    await sendMessage(studentIds, "You have not yet found a team", "Please identify a team that works for your schedule and add your name to the group");
                 }
             } else {
-                const groups = await getGroups(category.id);
+                let groups = await getGroups(category.id);
                 for (const group of groups) {
                     if (group.members_count === 0) continue;
+                    
                     if ((group.members_count === 1 && grpType === "1") || grpType === "0") {
                         cnt += await listMembers(courseId, group, grpType);
                     }
@@ -114,51 +189,36 @@ async function listTeamMembers(courseId) {
     }
 }
 
+async function getEnrollments(courseId) {
+    if (!cache.scores[courseId]) {
+        cache.enrollments[courseId] = await getCanvasData(`/courses/${courseId}/enrollments?per_page=100&type[]=StudentEnrollment`,{"per_page": 100}); // ATTN:
+
+        cache.scores[courseId] = cache.enrollments[courseId].reduce((acc, student) => {
+            acc[student.user_id] = {
+                "lastActivity": student['last_activity_at'].replace('T', ' ').substring(5, 16),
+                "activityTime": student['total_activity_time'],
+                "grade"       : student['grades']['current_grade'].padEnd(2, " "),
+                "score"       : student['grades']['current_score']    
+            }; // Use id as the key
+            return acc;
+        }, {});
+    }
+    return cache.scores[courseId];
+}
+
 async function studentInTeam(courseId) {
     let students = [];
-    const categories = await getCategories(courseId);
-    studentsInCourse = await getStudents(courseId)
+    studentsInCourse = await getStudentsByIds(courseId)
     
-    for (const category of categories) {
-        if (category.name == "Who is Here")
-            continue;
-        const groups = await getGroups(category.id);
-        for (const group of groups) {
-            if (group.members_count === 0) 
-                continue;
-            
-            const members = await getGroupMembers(group.id);
-            for (const member of members) {
-                const [lastName, ...theRest] = member.sortable_name.split(", ");
-                const firstName = theRest.join(" ").split(" ")[0].padEnd(10).slice(0, 10);
-                const student   = await getStudent(member.id);
-                let   lastLogin = await getLastLogin(member.id);
-                lastLogin = lastLogin || "2025-01-01T01:00:00-06:00";
-                
-                students.push({
-                    first:     firstName,
-                    last:      lastName.padEnd(15).slice(0, 15),
-                    id:        member.id,
-                    lastLogin: lastLogin,
-                    login:     lastLogin.replace('T', ' ').substring(5, 16),
-                    group:     group.name.slice(0, 7),
-                    email:     student.primary_email.padEnd(30),
-                    tz:        student.time_zone.padEnd(15).slice(0, 15)
-                });
-            }
-        }
-    }
-
-    mergeStudents(students, studentsInCourse);
     let notifyNoneParticipating = false
     if (await askQuestion("Email Non Participating?: ") == 'y')
         notifyNoneParticipating = true
 
     let group = "";
-    let sortBy = await askQuestion("Sort By (first, last, group, login, tz, email, id): ");
+    let sortBy = await askQuestion("Sort By (first, last, group, score, login, tz, email, id): ");
     let size = 0;
     while (sortBy.length > 0) {
-        students = sortByAttr(students, sortBy);
+        [sortBy, students] = sortByAttr(students, sortBy);
         for (const student of students) {
             switch (sortBy) {
                 case    "group"     :
@@ -172,7 +232,8 @@ async function studentInTeam(courseId) {
                     size++;
                     console.log(`${student["first"]} ${student["last"]} : ${student["email"]} : ${student["tz"]}`)
                     break;
-                case    "login"     :
+                case    "login"         :
+                case    "lastActivity"  :
                     console.log(`${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}`);
             
                     let lastLogin = new Date(student.lastLogin);
@@ -180,7 +241,7 @@ async function studentInTeam(courseId) {
                     aWeekAgo.setDate(aWeekAgo.getDate() - 7);
             
                     if (lastLogin < aWeekAgo && notifyNoneParticipating) {
-                        sendMessage([student.id],
+                        sendMessage(courseId, [student.id],
                             "You have not participated in the class this week",
                             "Please let me know if you are having trouble with the class"
                         );
@@ -189,6 +250,11 @@ async function studentInTeam(courseId) {
                     break;
                 case    "id"        :
                     console.log(`${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}`);
+                    break;
+                case    "score"         :
+                case    "activityTime"  : 
+                case    "grade"         :
+                    console.log(`${student["first"]} ${student["last"]} : ${student["score"]} : ${student["grade"]} : ${student["activityTime"]}`);
                     break;
                 case    "first"     :
                 case    "tz"        :
@@ -199,60 +265,7 @@ async function studentInTeam(courseId) {
                     break;
             }
         }
-        sortBy = await askQuestion("Sort By (first, last, group, login, tz, email, id): ");
-    }
-}
-
-function mergeStudents(students, studentsInCourse) {
-    // Create a Set of student IDs already in the students list
-    const studentIds = new Set(students.map(student => student.id));
-
-    // Iterate through studentsInCourse and add missing entries to students
-    studentsInCourse.forEach(student => {
-        if (!studentIds.has(student.id)) {
-            let [lastName, rest] = student.sortable_name.split(", ");
-            let firstName = rest.split(" ")[0].padEnd(10).slice(0, 10);
-            lastName = lastName.padEnd(15).slice(0, 15);
-
-            students.push({
-                id: student.id,
-                email: student.email.padEnd(30),
-                first: firstName,
-                last: lastName,
-                login: "01-01 00:00",
-                lastLogin: "2025-01-01T01:00:00-06:00",
-                group: "Not Yet",
-                tz: "Unknown"
-            });
-        }
-    });
-
-    return students;
-}
-async function studentsInClass(courseId) {
-    let students = [];
-    const studentList = await getStudents(courseId);
-
-    for (const member of studentList) {
-        const [lastName, ...rest] = member.sortable_name.split(", ");
-        const firstName = rest.join(" ").split(" ")[0].padEnd(10).slice(0, 10);
-        
-        students.push({
-            name: member.name,
-            first: firstName,
-            last: lastName.padEnd(15).slice(0, 15),
-            id: member.id,
-            email: member.email.padEnd(30)
-        });
-    }
-    
-    let sortBy = await askQuestion("Sort By (first, last, email, id): ");
-    while (sortBy.length > 0) {
-        students = sortByAttr(students, sortBy);
-        for (const student of students) {
-            console.log(`${student.first} ${student.last} : ${student.email} : ${student.id}`);
-        }
-        sortBy = await askQuestion("Sort By (first, last, email, id): ");
+        sortBy = await askQuestion("Sort By (first, last, group, score, login, tz, email, id): ");
     }
 }
 
@@ -263,7 +276,7 @@ async function listMembers(courseId, group, grpType) {
     studentIds = members.map(member => member.id);
     if (members) {
         for (const member of members) {
-            await showStudent(member.id);
+            await showStudent(courseId, member.id, member.name);
         }
     }
     if (members.length === 1 && grpType === "1") {
@@ -284,7 +297,6 @@ async function listMembers(courseId, group, grpType) {
     return members.length;
 }
 
-
 // Get all groups within the specified group category
 async function getGroups(catId) {
     if (!cache.groups[catId]) {
@@ -301,39 +313,24 @@ async function getGroupMembers(groupId) {
     return cache.groupMembers[groupId];
 }
 
-// Get unassigned students in a group category
-async function getUnassigned(groupId) {
-    if (!cache.unassigned[groupId]) {
-        cache.unassigned[groupId] = await getCanvasData(`/group_categories/${groupId}/users?unassigned=true&per_page=100`);
-    }
-    return cache.unassigned[groupId];
-}
-
-// Get group categories
-async function getCategories(courseId) {
-    if (!cache.categories[courseId]) {
-        cache.categories[courseId] = await getCanvasData(`/courses/${courseId}/group_categories`);
-    }
-    return cache.categories[courseId];
-}
-
 async function sendStatusLetters(courseId) {
-    const status = await getScores(courseId);
-    const unfinishedAssignments = await getUnfinishedAssignments(courseId);
+    studentList = getStudentsByIds(courseId)
+    unfinishedAssignments = getUnfinishedAssignments(courseId)
+    _, studentList = sortByAttr(studentList, "score")
 
-    await statusLetter(courseId, status, 90, 100, unfinishedAssignments,
+    await statusLetter(courseId, studentList, 90, 100, unfinishedAssignments,
         "Keep up the good work!: Current Score: ",
         "\nYou are doing very well in the class keep up the good work");
-    await statusLetter(courseId, status, 70, 90, unfinishedAssignments,
+    await statusLetter(courseId, studentList, 70, 90, unfinishedAssignments,
         "You are doing well but might be missing a few assignments: Current Score: ",
         "\nYou can still turn these in until the end of week four");
-    await statusLetter(courseId, status, 0, 70, unfinishedAssignments,
+    await statusLetter(courseId, studentList, 0, 70, unfinishedAssignments,
         "How are you doing in the class? It looks like you are struggling: Current Score: ",
         "\nHere is a list of your missing assignments. You can still turn these in until the end of week four\nDon't forget there is tutoring available for the class.");
 }
 
-async function statusLetter(courseId, status, lo, hi, unfinishedAssignments, subject, body) {
-    let studentList = status.filter(student => lo < parseInt(student.currentScore) && parseInt(student.currentScore) < hi);
+async function statusLetter(courseId, studentScores, lo, hi, unfinishedAssignments, subject, body) {
+    let studentList = studentScores.filter(student => lo < parseInt(student.currentScore) && parseInt(student.currentScore) < hi);
 
     let go = await askQuestion("go/no go? ");
 
@@ -400,18 +397,17 @@ async function getUnfinishedAssignments(courseId) {
 
     today = new Date();
     let pastAssisgnments = assignments.filter(a => new Date(a.due_at) < today);
-    // for (const assignment of assignments) {
-    //     let dueDate = assignment.due_at;
-    //     if (dueDate) {
-    //         dueDate = new Date(dueDate);
-    //         // Skip assignments that aren't past due
-    //         if (dueDate > today) {
-    //             console.log(`Not due yet ${assignment.name} - ${dueDate}`);
-    //             continue;
-    //         }
-    //     }
 
-    for (const assignment of pastAssisgnments) {
+    for (const assignment of pastAssisgnments) {    
+        const dueDateStr = assignment['due_at'];
+        const dueDate = new Date(dueDateStr); // Convert ISO string to Date object
+        const now = new Date(); // Current time in UTC
+        
+        // Skip assignments that are not yet due
+        if (dueDate > now) {
+            console.log(`Not due yet: ${dueDateStr.split('T')[0]} : ${assignment['name']}`);
+        } 
+
         // Fetch unsubmitted submissions
         const submissions = await getSubmissionByStatus(courseId, assignment.id, 'unsubmitted');
         for (const submission of submissions) {
@@ -438,28 +434,9 @@ async function getSubmissionByStatus(courseId, assignmentId, state) {
     return cache.submissionByStatus[assignmentId].filter(s => s.missing == true);
 }
 
-async function removeAnnouncements(courseId) {
-    const announcements = await getAnnouncements(courseId);
-
-    for (const announcement of announcements) {
-        console.log(`${announcement.id}  ${announcement.title}`);
-        const deleteChoice = await askQuestion("Delete?: ");
-        if (deleteChoice === "y") {
-            // const deleted = await deleteAnnouncements(courseId, announcement.id);
-            console.log(`${deleted.discussion_topic.id}  ${deleted.discussion_topic.title} ${deleted.discussion_topic.workflow_state}`);
-        }
-    }
-
-    const updatedAnnouncements = await getAnnouncements(courseId);
-    for (const announcement of updatedAnnouncements) {
-        console.log(`${announcement.id}  ${announcement.title}`);
-    }
-}
-
-
 // Export the function
-module.exports = { clearCache, getAnnouncements, listAnnouncements, getAssignments,
-    getStudents, getStudent, showStudent, getScores, listTeamMembers, studentInTeam, 
-    listMembers, getGroups, getGroupMembers, getUnassigned, removeAnnouncements, studentsInClass,
+module.exports = { clearCache, getAnnouncements, listAnnouncements, getAssignments, startUp,
+    getStudents, getStudent, listTeamMembers, studentInTeam, 
+    listMembers, getGroups, getGroupMembers, getUnassigned,
     sendStatusLetters, listUnsubmitted, getLastLogin, getUnfinishedAssignments, getCategories
 };
