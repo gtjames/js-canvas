@@ -1,18 +1,21 @@
 const { askQuestion, getCanvasData, sendMessage, sortByAttr } = require('./utilities');
 
 const cache = {
-    announcements: {},
-    assignments: {},
-    categories: {},
-    enrollments: {},
-    groupMembers: {},
-    groups: {},
-    lastLogin: {},
-    scores: {},
-    students: {},
-    studentsByIds : {},
-    submissionByStatus: {},
-    unassigned: {},
+    allSubmissions:      {},
+    announcements:       {},
+    assignments:         {},
+    categories:          {},
+    enrollments:         {},
+    groupMembers:        {},
+    groups:              {},
+    lastLogin:           {},
+    scores:              {},
+    students:            {},
+    studentsByIds :      {},
+    submissionByStatus:  {},
+    submissionsByStudent:{},
+    allSubmissions:      {},
+    unassigned:          {},
 };
 
 function clearCache() {
@@ -21,13 +24,13 @@ function clearCache() {
 
 async function startUp(courseId) {
     await getStudents (courseId)       //  _students
-    await getCategories      (courseId)       //  _categories
+    await buildGroups      (courseId)       //  _categories
     // getGroups        (1706)           
     //    _groups
     // getUnassigned   (1706)               _unassigned
     // getGroupMembers(groupId)             _groupMembers  = {}
     // getLastLogin(studentId)              _lastLogin     = {}
-    // getSubmissionByStatus(courseId, 425, 'unsubmitted')      _submissionByStatus
+    // getSubmissions(courseId, 425, 'unsubmitted')      _submissionByStatus
     // getUnfinishedAssignments(courseId)    
     // getAnnouncements(courseId)           _announcements
     // getAssignments  (courseId)           _assignments
@@ -47,20 +50,13 @@ async function listAnnouncements(courseId) {
     }
 }
 
-async function getAssignments(courseId) {
-    if (!cache.assignments[courseId]) {
-        cache.assignments[courseId] = await getCanvasData(`/courses/${courseId}/assignments?per_page=100`);
-    }
-    return cache.assignments[courseId];
-}
-
 function getStudentsByIds(courseId) {
     return cache.studentsByIds[courseId];
 } 
 async function getStudents(courseId) {
     if (!cache.students[courseId]) {
         cache.studentsByIds[courseId] = await getCanvasData(`/courses/${courseId}/users?enrollment_type[]=student&per_page=100`);
-        cache.students[courseId] = []
+        cache.students[courseId] = {}
 
         scores = await getEnrollments(courseId);
 
@@ -80,6 +76,7 @@ async function getStudents(courseId) {
             student.grade        = scores[student.id]?.grade || "_";
             student.lastLogin    = lastLogin;
             student.login        = lastLogin.replace('T', ' ').slice(5, 16);
+            student.name         = student.sortable_name;
             student.first        = firstName.padEnd(10).slice(0, 10);
             student.last         = lastName.padEnd(15).slice(0, 15);
             student.email        = student.email.padEnd(30);
@@ -118,28 +115,30 @@ async function showStudent(courseId, studentId, name) {
 
 // Get group categories
 async function getCategories(courseId) {
-    let studentList = await getStudentsByIds(courseId);
-
     if (!cache.categories[courseId]) {
         cache.categories[courseId] = await getCanvasData(`/courses/${courseId}/group_categories`);
+    }
+    return cache.categories[courseId];
+}
 
-        for (const category of cache.categories[courseId]) {
-            if (category.name === "Who is Here") continue;
+async function buildGroups(courseId) {
+    let categories  = await getCategories(courseId);
+    let studentList = await getStudentsByIds(courseId);
+
+    for (const category of categories) {
+        if (category.name === "Who is Here") continue;
+        
+        let groups = await getGroups(category.id);
+        for (const group of groups) {
+            if (group.members_count === 0) continue;
             
-            let groups = await getGroups(category.id);
-            for (const group of groups) {
-                if (group.members_count === 0) continue;
-                
-                let members = await getGroupMembers(group.id);
-                for (const member of members) {
-                    student = studentList.find(s => s.id === member.id) || null;
-                    student.group = group.name.slice(0, 7);
-                }
+            let members = await getGroupMembers(group.id);
+            for (const member of members) {
+                student = studentList.find(s => s.id === member.id) || null;
+                student.group = group.name.slice(0, 7);
             }
         }
     }
-    
-    return cache.categories[courseId];
 }
 
 // Get unassigned students in a group category
@@ -189,6 +188,9 @@ async function listTeamMembers(courseId) {
     }
 }
 
+//  Get the overal grade and activit time for each student
+//      what is returned?
+//      cache.scores[courseId] = { studentId: { lastActivity: "2021-09-01 12:00", activityTime: 1234, grade: "A", score: 90.0 } }
 async function getEnrollments(courseId) {
     if (!cache.scores[courseId]) {
         cache.enrollments[courseId] = await getCanvasData(`/courses/${courseId}/enrollments?per_page=100&type[]=StudentEnrollment`,{"per_page": 100}); // ATTN:
@@ -218,9 +220,19 @@ async function studentInTeam(courseId) {
     let sortBy = await askQuestion("Sort By (first, last, group, score, login, tz, email, id): ");
     let size = 0;
     while (sortBy.length > 0) {
-        [sortBy, students] = sortByAttr(studentsInCourse, sortBy);
+        if (sortBy === "search") {
+            let name = await askQuestion("Enter First or Last Name: ");
+            students = studentsInCourse.filter(s=>s.name.indexOf(name) >= 0);
+        } else {
+            [sortBy, students] = sortByAttr(studentsInCourse, sortBy);
+        }
         for (const student of students) {
             switch (sortBy) {
+                case    "search"    :
+                    let allAssignments = getAllAssignments(student.id);
+                    console.log(`${student.first} ${student.last}\nEmail:\t\t${student.email}\nGroup:\t\t${student.group}\nTime Zone:\t${student.tz}\nLast Login:\t${student.login}\nID:\t\t${student.id}\nScore:\t\t${student["score"]}\tGrade:\t${student.grade}\nTime Active:\t${student.activityTime}`);
+                    console.log(`${allAssignments[student.id]?.all.map(a => `\t${a}`).join("\n") || "\tNone"}`);
+                    break
                 case    "group"     :
                     if (group !== student.group) {
                         if (size > 0)                        //  if so, print the group size
@@ -314,7 +326,7 @@ async function getGroupMembers(groupId) {
 
 async function sendStatusLetters(courseId) {
     let list             = await getStudentsByIds(courseId)
-    let unfinishedAssignments   = await getUnfinishedAssignments(courseId)
+    let [unfinishedAssignments, all]   = await getUnfinishedAssignments(courseId)
     const [x, studentList]      = sortByAttr(list, "score");
 
     await statusLetter(courseId, studentList, 90, 100, unfinishedAssignments,
@@ -349,22 +361,22 @@ async function statusLetter(courseId, studentScores, lo, hi, unfinishedAssignmen
     };
 }
 async function listUnsubmitted(courseId) {
-    const unfinishedAssignments = await getUnfinishedAssignments(courseId);
+    const [submissionsByStudent, allSubmissions] = await getUnfinishedAssignments(courseId);
     const studentIds = new Set();
 
     const notify = await askQuestion("Notify?: ");
     let msg = await askQuestion("Message?: ");
     msg = msg || "\tThe Following assignments have not been submitted.\n\tThese can all be submitted up to the end of this week (Week 4)";
 
-    for (const [studentId, info] of Object.entries(unfinishedAssignments)) {
-        if (info.unsubmitted.length > 0) {
+    for (const [studentId, info] of Object.entries(submissionsByStudent)) {
+        if (info.submissions.length > 0) {
             studentIds.add(studentId);
             console.log(`${info.name.padEnd(50).slice(0, 50)} : ${studentId}`);
-            for (const assignment of info.unsubmitted) {
-                console.log(`    - ${assignment}`);
+            for (const assignment of info.submissions) {
+                console.log(`    - ${assignment.title} ${assignment.score} ${assignment.submittedAt}`); 
             }
             if (notify === "y") {
-                const missed = info.unsubmitted.join("\n\t");
+                const missed = info.submissions.join("\n\t");
                 await sendMessage(courseId, [`'${studentId}'`], "Missing Assignments", `${msg}\n\n\t${missed}`);
             }
         }
@@ -380,62 +392,99 @@ async function getLastLogin(studentId) {
 }
 
 async function getUnfinishedAssignments(courseId) {
-    const students    = await getStudents(courseId);
-    const assignments = await getAssignments(courseId);
+    if (!cache.allSubmissions[courseId]) {
+        const students    = await getStudentsByIds(courseId);   //  student details
+        const assignments = await getAssignments(courseId);     //  assignment details
     
-    let studentAssignments = {};
-    
-    // Initialize student assignments object
-    students.forEach(student => {
-        studentAssignments[student.id] = {
-            name: student.name,
-            email: student.email,
-            unsubmitted: []
-        };
-    });
-
-    today = new Date();
-    let pastAssisgnments = assignments.filter(a => new Date(a.due_at) < today);
-
-    for (const assignment of pastAssisgnments) {    
-        const dueDateStr = assignment['due_at'];
-        const dueDate = new Date(dueDateStr); // Convert ISO string to Date object
-        const now = new Date(); // Current time in UTC
+        let submissionsByStudent = {};
+        let allSubmissions = {};
+        let assignmentsName = {};
         
-        // Skip assignments that are not yet due
-        if (dueDate > now) {
-            console.log(`Not due yet: ${dueDateStr.split('T')[0]} : ${assignment['name']}`);
-        } 
+        // Initialize student assignments object
+        students.forEach(student => {
+            submissionsByStudent[student.id] = { name: student.name, submissions: [] };
+        });
 
-        // Fetch unsubmitted submissions
-        const submissions = await getSubmissionByStatus(courseId, assignment.id, 'unsubmitted');
-        for (const submission of submissions) {
-            const studentId = submission.user_id;
-            if (studentAssignments[studentId]) {
-                studentAssignments[studentId].unsubmitted.push(assignment.name);
+        assignments.forEach(assignment => {
+            assignmentsName[assignment.id] = { name: assignment.name };
+        });
+
+        today = new Date();
+        let pastAssisgnments = assignments.filter(a => new Date(a.dueAt) < today);
+
+        for (const assignment of pastAssisgnments) {    
+            // Fetch all submissions for the assignment
+            allSubmissions[assignment.id] = await getSubmissions(courseId, assignment.id);
+            allSubmissions[assignment.id].title = assignment.title;
+
+            // Get all unsubmitted assignments
+            // return cache.submissionByStatus[assignmentId].filter(s => s.missing == true);
+    
+            for (const submission of allSubmissions[assignment.id]) {
+                const studentId = submission.userId;
+                if (studentId in submissionsByStudent) {
+                    submission.title = assignment.title;
+                    submissionsByStudent[studentId].submissions.push(submission);
+                }
             }
         }
+        cache.submissionsByStudent[courseId] = submissionsByStudent;
+        cache.allSubmissions[courseId]       = allSubmissions;
     }
-
-    return studentAssignments;
+    return [cache.submissionsByStudent[courseId], cache.allSubmissions[courseId]];
 }
 
-async function getSubmissionByStatus(courseId, assignmentId, state) {
-    if (!cache.submissionByStatus[assignmentId]) {
-        cache.submissionByStatus[assignmentId] = await getCanvasData(`/courses/${courseId}/assignments/${assignmentId}/submissions?per_page=100`);
-    }
-    if (!cache.submissionByStatus[assignmentId])
-        cache.submissionByStatus[assignmentId] = []
-    
-    // for (const submission of cache.submissionByStatus[assignmentId])
-    //     console.log(`Not due yet: ${submission['id']} : ${submission.missing}`)
+function getAllAssignments(studentId) {
+    return cache.submissionsByStudent[studentId];
+}
 
-    return cache.submissionByStatus[assignmentId].filter(s => s.missing == true);
+//  Get Assignments for the course
+//  What is returned
+//  cache.assignments[courseId] = [ { id: 425, dueAt: "2021-09-01T12:00:00-06:00", lockAt: "2021-09-01T12:00:00-06:00", possiblePts: 100, title: "Assignment 1", hasSubmissions: true } ]
+async function getAssignments(courseId) {
+    if (!cache.assignments[courseId]) {
+        let tmp = await getCanvasData(`/courses/${courseId}/assignments?per_page=100`);
+        let sub = tmp.map(a => { return {
+            "id"             : a.id,
+            "dueAt"          : a.due_at,
+            "lockAt"         : a.lock_at,
+            "possiblePts"    : a.points_possible,
+            "title"          : a.name,
+            "hasSubmissions" : a.has_submitted_submissions
+            }; 
+        });
+        cache.assignments[courseId] = sub;
+    }
+    return cache.assignments[courseId];
+}
+
+//  Get Submissions by Status
+//  
+//  What is returned?
+//  cache.submissionByStatus[assignmentId] = [ { userId: 123, grade: 90, score: 90, submittedAt: "2021-09-01T12:00:00-06:00", workflowState: "submitted", missing: false } ]
+async function getSubmissions(courseId, assignmentId) {
+    if (!cache.submissionByStatus[assignmentId]) {
+        tmp = await getCanvasData(`/courses/${courseId}/assignments/${assignmentId}/submissions?per_page=100`);
+        let sub;
+        try {
+            sub = tmp.map(a => { return {
+                "userId"        : a.user_id,
+                "grade"         : a.grade,
+                "score"         : a.score,
+                "submittedAt"   : a.submitted_at,
+                "userId"        : a.user_id,
+                "workflowState" : a.workflow_state,
+                "missing"       : a.missing
+            }; 
+        });
+        } catch (e) {
+            console.log(e);
+        }
+        cache.submissionByStatus[assignmentId] = sub;
+    }
+    return cache.submissionByStatus[assignmentId];
 }
 
 // Export the function
-module.exports = { clearCache, getAnnouncements, listAnnouncements, getAssignments, startUp,
-    getStudents, getStudent, listTeamMembers, studentInTeam, 
-    listMembers, getGroups, getGroupMembers, getUnassigned,
-    sendStatusLetters, listUnsubmitted, getLastLogin, getUnfinishedAssignments, getCategories
-};
+module.exports =  { clearCache, listAnnouncements, startUp, getStudents, listTeamMembers, 
+                    studentInTeam, getGroups, sendStatusLetters, listUnsubmitted, getCategories };
