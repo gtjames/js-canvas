@@ -8,7 +8,7 @@ async function main() {
 
     while (true) {
         console.log("\nMain Menu");
-        console.log("1. Team Members        2. Students in Team");
+        console.log("1. Team Members        2. Student Search");
         console.log("3. List Unsubmitted    4. Missing Assignment Letters");  //  ATTN:  not showing scores
         console.log("5. Message 1 student   6. Message Class");
         console.log("10. Set School and Class");
@@ -18,13 +18,13 @@ async function main() {
 
         switch (choice) {
             case '1':
-                await c.listTeamMembers(getCourseId());
+                await c.listTeamMembersByGroup(getCourseId());
                 break;
             case '2':
-                await c.studentInTeam(getCourseId());
+                await c.studentSearch(getCourseId());
                 break;
             case '3':
-                await c.listUnsubmitted(getCourseId());
+                await c.listAssignments(getCourseId());
                 break;
             case '4':
                 await c.sendStatusLetters(getCourseId());
@@ -36,7 +36,7 @@ async function main() {
                 await sendMessage(getCourseId(), [studentId], subject, body);
                 break;
             case '6':
-                const studentList   = await c.getStudents(c.courseId);
+                const studentList   = await c.getAllStudentDetails(c.courseId);
                 const studentIds    = studentList.map(student => student.id);
                 const classSubject  = await askQuestion("Subject: ");
                 const classBody     = await askQuestion("Body: ");
