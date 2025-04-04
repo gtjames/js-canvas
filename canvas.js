@@ -11,56 +11,14 @@ const cache = {
     scores:              {},
     studentsById:        {},
     studentList:         {},
-    submissionByStatus:  {},
+    allSubmissions:      {},
     submissionsByStudent:{},
     unassigned:          {},
 };
-
-async function getAllStudentDetails(courseId) {
-    if (!cache.studentsById[courseId]) {
-        //  Get the students in the course
-        cache.studentList[courseId] = await getCanvasData(`/courses/${courseId}/users?enrollment_type[]=student&per_page=100`);
-        cache.studentsById[courseId] = {}
-
-        //  Get the scores for all assignments for all students
-        //  The object returned is a dictionary of students with the following information
-        //  { studentId: { lastActivity: "2021-09-01 12:00", activityTime: 1234, grade: "A", score: 90.0 } }
-        scores = await getCourseActivity(courseId);
-
-        //  Loop through the students and get all details
-        for (const student of cache.studentList[courseId]) {
-            //  Profile information of interest is just the time zone
-            const profile   = await getStudentProfile(student.id);
-            //  Last login is the last time the student logged into the course
-            const lastLogin = await getLastLogin(student.id) || "2025-01-01T01:00:00-06:00";
-        
-            const   [lastName, rest] = student.sortable_name.split(", ");
-            const   firstName = rest.split(" ")[0].padEnd(10).slice(0, 10);
-            const   tm  = scores[student.id]["activityTime"]
-            
-            const   hrs = Math.floor(tm / 60).toString().padStart(4, " ");
-            const   min = (tm % 60).toString().padStart(2, "0");
-
-            student.group        = "Team XX";       //  we will get this later
-            student.lastActivity = scores[student.id]?.lastActivity.replace('T', ' ').substring(5, 16),
-            student.score        = scores[student.id]?.score || "_";
-            student.grade        = scores[student.id]?.grade || "_";
-            student.lastLogin    = lastLogin;
-            student.login        = lastLogin.replace('T', ' ').slice(5, 16);
-            student.name         = student.sortable_name;
-            student.first        = firstName.padEnd(10).slice(0, 10);
-            student.last         = lastName.padEnd(15).slice(0, 15);
-            student.email        = student.email.padEnd(30);
-            student.activityTime = `${hrs}.${min}`;
-            student.tz           = profile.time_zone;
-            cache.studentsById[courseId][student.id] = student;
-        }
-    }
-    return cache.studentsById[courseId];
-}
-
 async function listTeamMembersByGroup(courseId) {
-    let categories = await getCategories(courseId);
+
+//  show members in all groups, groups of one or not affiliated with a group
+    let [categories, groups]  = await getStudentGroups(courseId);
     let grpType    = await askQuestion("(1) Solo, (0) All, (u) Unassigned: ");
     
     while (grpType.length > 0) {
@@ -83,10 +41,11 @@ async function listTeamMembersByGroup(courseId) {
                     await sendMessage(studentIds, "You have not yet found a team", "Please identify a team that works for your schedule and add your name to the group");
                 }
             } else {
-                let groups = await getGroups(category.id);
+                // let groups = await getGroups(category.id);
                 for (const group of groups) {
-                    if (group.members_count === 0) continue;
-                    
+                    if (group.members_count === 0) {
+                        continue;
+                    }
                     if ((group.members_count === 1 && grpType === "1") || grpType === "0") {
                         cnt += await listMembers(courseId, group, grpType);
                     }
@@ -98,6 +57,7 @@ async function listTeamMembersByGroup(courseId) {
     }
 }
 
+//  show all details about the students
 async function studentSearch(courseId) {
     let students = [];
     let studentList = await getStudentList(courseId)
@@ -116,6 +76,7 @@ async function studentSearch(courseId) {
         } else {
             [sortBy, students] = sortByAttr(studentList, sortBy);
         }
+        console.log(`# of Students: ${students.length}`);
         for (const student of students) {
             switch (sortBy) {
                 case    "search"    :
@@ -124,7 +85,7 @@ async function studentSearch(courseId) {
                     let submitted      = allAssignments.submissions.filter(a => ! a.missed);
                     console.log(`${student.first} ${student.last}\nEmail:\t\t${student.email}\nGroup:\t\t${student.group}\nTime Zone:\t${student.tz}\nLast Login:\t${student.login}\nID:\t\t${student.id}\nScore:\t\t${student["score"]}\nGrade:\t\t${student.grade}\nTime Active:\t${student.activityTime}`);
                     console.log(`${missed.map(   a => `\t${a.title}\tMissing`).join("\n") || "\tNone Missing"}`);
-                    console.log(`${submitted.map(a => `\t${a.title}\t${a.grade}\t${a.submittedAt}`).join("\n") || ""}`);
+                    console.log(`${submitted.map(a => `\t${a.title}\t${a.grade}/${a.possiblePts}\t${a.submittedAt}`).join("\n") || ""}`);
                     break
                 case    "group"     :
                     if (group !== student.group) {
@@ -173,6 +134,172 @@ async function studentSearch(courseId) {
     }
 }
 
+async function getAllStudentDetails(courseId) {
+    if (!cache.studentsById[courseId]) {
+        //  Get the students in the course
+        cache.studentList[courseId] = await getCanvasData(`/courses/${courseId}/users?enrollment_type[]=student&per_page=100`, {}, "students");
+        cache.studentsById[courseId] = {}
+
+        //  Get the scores for all assignments for all students
+        //  The object returned is a dictionary of students with the following information
+        //  { studentId: { lastActivity: "2021-09-01 12:00", activityTime: 1234, grade: "A", score: 90.0 } }
+        scores = await getCourseActivity(courseId);
+
+        //  Loop through the students and get all details
+        for (const student of cache.studentList[courseId]) {
+            //  Profile information of interest is just the time zone
+            const profile   = await getStudentProfile(student.id);
+            //  Last login is the last time the student logged into the course
+            const lastLogin = await getLastLogin(student.id) || "2025-01-01T01:00:00-06:00";
+        
+            const   [lastName, rest] = student.sortable_name.split(", ");
+            const   firstName = rest.split(" ")[0].padEnd(10).slice(0, 10);
+            const   tm  = scores[student.id]["activityTime"]
+            
+            const   hrs = Math.floor(tm / 60).toString().padStart(4, " ");
+            const   min = (tm % 60).toString().padStart(2, "0");
+
+            student.activityTime = `${hrs}.${min}`;
+            student.email        = student.email.padEnd(30);
+            student.first        = firstName.padEnd(10).slice(0, 10);
+            student.grade        = scores[student.id]?.grade || "_";
+            student.group        = "Team XX";       //  we will get this later
+            student.last         = lastName.padEnd(15).slice(0, 15);
+            student.lastActivity = scores[student.id]?.lastActivity.replace('T', ' ').substring(5, 11),
+            student.lastLogin    = lastLogin;
+            student.login        = lastLogin.replace('T', ' ').slice(5, 11);
+            student.name         = student.sortable_name;
+            student.score        = scores[student.id]?.score || "0";
+            student.tz           = profile.time_zone;
+            delete student.created_at;
+            delete student.integration_id;
+            cache.studentsById[courseId][student.id] = student;
+        }
+    }
+    return cache.studentsById[courseId];
+}
+
+//  show all assignments for the students
+//      missing and submitted
+//      if submitted show the grade
+async function listAssignments(courseId) {
+    const submissionsByStudent = await getAllSubmissions(courseId);
+
+    const notify = await askQuestion("Notify?: ");
+    let msg = await askQuestion("Message?: ");
+    msg = msg || "\tThe Following assignments have not been submitted.\n\tThese can all be submitted up to the end of this week (Week 4)";
+    const missing = await askQuestion("(A)ll / (M)issing?: ");
+
+    for (const [studentId, unsub] of Object.entries(submissionsByStudent)) {
+        console.log(`${unsub.name.padEnd(50)} : ${cache.studentsById[courseId][studentId].email}`);
+        let displayList = unsub.submissions;
+        if (missing === "m") {
+            let missingWork = displayList.filter(asgn => asgn.missed);
+            missingList = missingWork.map(a => `\t${a.title}`).join("\n") || "\tAll Assignments are Submitted";
+            console.log(missingList);
+            if (notify === "y" && missingWork.length > 0) {
+                await sendMessage(courseId, [`'${studentId}'`], "Missing Assignments", `${msg}\n\n\t${missingWork}`);
+            }
+        } else {
+            for (const assignment of displayList) {
+                if (assignment.missed)
+                    console.log(`              ${assignment.title}`); 
+                else
+                    console.log(` ${assignment.score}  ${(assignment?.submittedAt || "          T").replace("T", " ").substring(5,11)} ${assignment.title} `); 
+            }
+        }
+    }
+}
+
+//  get all groups and the members in the groups
+async function getStudentGroups(courseId) {
+    let categories  = await getCategories(courseId);
+    let studentList = await getStudentList(courseId);
+    let groups;
+
+    for (const category of categories) {
+        if (category.name === "Who is Here") continue;
+        
+        groups = await getGroups(category.id);
+        for (const group of groups) {
+            if (group.members_count === 0) continue;
+            
+            let members = await getGroupMembers(group.id);
+            for (const member of members) {
+                student = studentList.find(s => s.id === member.id) || null;
+                student.group = group.name.slice(0, 7);
+            }
+        }
+    }
+    return [categories, groups];
+}
+
+// Get unassigned students in a group category
+async function  getUnassigned(catId) {
+    if (!cache.unassigned[catId]) {
+        cache.unassigned[catId] = await getCanvasData(`/group_categories/${catId}/users?unassigned=true&per_page=100`, {}, "unassigned");
+    }
+    return cache.unassigned[catId];
+}
+
+//  Get Assignments for the course
+//  What is returned
+//  cache.assignments[courseId] = [ { id: 425, dueAt: "2021-09-01T12:00:00-06:00", lockAt: "2021-09-01T12:00:00-06:00", possiblePts: 100, title: "Assignment 1", hasSubmissions: true } ]
+async function getAssignments(courseId) {
+    if (!cache.assignments[courseId]) {
+        let tmp = await getCanvasData(`/courses/${courseId}/assignments?per_page=100`, "assignments");
+        let sub = tmp.map(a => { return {
+            "id"             : a.id,
+            "dueAt"          : a.due_at,
+            "lockAt"         : a.lock_at,
+            "possiblePts"    : a.points_possible.toFixed(0).padStart(3, " "),
+            "title"          : a.name.padEnd(50),
+            "hasSubmissions" : a.has_submitted_submissions
+            }; 
+        });
+        cache.assignments[courseId] = sub;
+    }
+    return cache.assignments[courseId];
+}
+
+function getStudentList(courseId) {
+    return cache.studentList[courseId];
+}
+
+async function getStudentProfile(studentId) {
+    return getCanvasData(`/users/${studentId}/profile`, {}, ""+studentId)
+}
+
+// Fetch student profile information
+function showStudent(courseId, studentId, name) {
+    let student = cache.studentList[courseId].find(student => student.id === studentId) || null;
+    if (student) {
+        console.log(`\t- ${student.first} ${student.last} ${student.email} ${student.tz}`);
+    } else {
+        console.log(`\t- ${name} has dropped the class`);
+    }
+}
+
+//  Get the overal grade and activity time for each student
+//      what is returned?
+//      cache.scores[courseId] = { studentId: { lastActivity: "2021-09-01 12:00", activityTime: 1234, grade: "A", score: 90.0 } }
+async function getCourseActivity(courseId) {
+    if (!cache.scores[courseId]) {
+        cache.enrollments[courseId] = await getCanvasData(`/courses/${courseId}/enrollments?per_page=100&type[]=StudentEnrollment`,{"per_page": 100}, "activity"); // ATTN:
+
+        cache.scores[courseId] = cache.enrollments[courseId].reduce((acc, student) => {
+            acc[student.user_id] = {
+                "lastActivity": student['last_activity_at'].replace('T', ' ').substring(5, 11),
+                "activityTime": student['total_activity_time'],
+                "grade"       : student['grades']['current_grade'].padEnd(2, " "),
+                "score"       : student['grades']['current_score'].toFixed(0).padStart(3, " "),
+            }; // Use id as the key
+            return acc;
+        }, {});
+    }
+    return cache.scores[courseId];
+}
+
 // List members in a group
 async function listMembers(courseId, group, grpType) {
     console.log(`${group['name']} # in Group: ${group['members_count']}`);
@@ -201,60 +328,18 @@ async function listMembers(courseId, group, grpType) {
     return members.length;
 }
 
-async function listAssignments(courseId) {
-    const submissionsByStudent = await getUnfinishedAssignments(courseId);
-        // const studentIds = new Set();
-
-    const notify = await askQuestion("Notify?: ");
-    let msg = await askQuestion("Message?: ");
-    msg = msg || "\tThe Following assignments have not been submitted.\n\tThese can all be submitted up to the end of this week (Week 4)";
-    const missing = await askQuestion("(A)ll / (M)issing?: ");
-
-    for (const [studentId, info] of Object.entries(submissionsByStudent)) {
-        console.log(`${info.name.padEnd(50)} : ${cache.studentsById[courseId][studentId].email}`);
-        let displayList = info.submissions;
-        let missingWork = displayList.filter(asgn => asgn.missed);
-        if (missing === "m") {
-            missingList = missingWork.map(a => `\t${a.title}`).join("\n") || "\tAll Assignments are Submitted";
-            console.log(missingList);
-            if (notify === "y" && missingWork.length > 0) {
-                await sendMessage(courseId, [`'${studentId}'`], "Missing Assignments", `${msg}\n\n\t${missingWork}`);
-            }
-        } else {
-            for (const assignment of displayList) {
-                if (assignment.missed)
-                    console.log(`    - ${assignment.title}`); 
-                else
-                    console.log(`    - ${assignment.title} ${assignment.score} ${assignment.missing} ${assignment.workflowState} ${assignment.submittedAt}`); 
-            }
-        }
+// Get group categories
+async function getCategories(courseId) {
+    if (!cache.categories[courseId]) {
+        cache.categories[courseId] = await getCanvasData(`/courses/${courseId}/group_categories`, {}, "categories");
     }
-}
-
-async function getStudentGroup(courseId) {
-    let categories  = await getCategories(courseId);
-    let studentList = await getStudentList(courseId);
-
-    for (const category of categories) {
-        if (category.name === "Who is Here") continue;
-        
-        let groups = await getGroups(category.id);
-        for (const group of groups) {
-            if (group.members_count === 0) continue;
-            
-            let members = await getGroupMembers(group.id);
-            for (const member of members) {
-                student = studentList.find(s => s.id === member.id) || null;
-                student.group = group.name.slice(0, 7);
-            }
-        }
-    }
+    return cache.categories[courseId];
 }
 
 // Get all groups within the specified group category
 async function getGroups(catId) {
     if (!cache.groups[catId]) {
-        cache.groups[catId] = await getCanvasData(`/group_categories/${catId}/groups?per_page=30`);
+        cache.groups[catId] = await getCanvasData(`/group_categories/${catId}/groups?per_page=30`, {}, "groups");
     }
     return cache.groups[catId];
 }
@@ -262,29 +347,32 @@ async function getGroups(catId) {
 // Step 2: Get all groups within the specified group category
 async function getGroupMembers(groupId) {
     if (!cache.groupMembers[groupId]) {
-        cache.groupMembers[groupId] = await getCanvasData(`/groups/${groupId}/users?per_page=70`);
+        cache.groupMembers[groupId] = await getCanvasData(`/groups/${groupId}/users?per_page=70`, {}, "groupMembers"+groupId);
     }
     return cache.groupMembers[groupId];
 }
 
-async function getUnfinishedAssignments(courseId) {
+//  Get Last Login
+async function getLastLogin(studentId) {
+    if (!cache.lastLogin[studentId]) {
+        cache.lastLogin[studentId] = await getCanvasData(`/users/${studentId}?include[]=last_login`, {}, "lastLogin"+studentId);
+    }
+    return cache.lastLogin[studentId]['last_login'];
+}
+
+async function getAllSubmissions(courseId) {
     if (!cache.submissionsByStudent[courseId]) {
         const students    = await getStudentList(courseId);   //  student details
         const assignments = await getAssignments(courseId);     //  assignment details
     
         let submissionsByStudent = {};
         let allSubmissions = {};
-        let assignmentsName = {};
         
         // Initialize student assignments object
         students.forEach(student => {
             submissionsByStudent[student.id] = { name: student.name, submissions: [] };
         });
-
-        assignments.forEach(assignment => {
-            assignmentsName[assignment.id] = { name: assignment.name };
-        });
-
+    
         today = new Date();
         let pastAssisgnments = assignments.filter(a => new Date(a.dueAt) < today);
 
@@ -292,13 +380,11 @@ async function getUnfinishedAssignments(courseId) {
             // Fetch all submissions for the assignment
             allSubmissions[assignment.id] = await getSubmissions(courseId, assignment.id, assignment.title);
 
-            // Get all unsubmitted assignments
-            // return cache.submissionByStatus[assignmentId].filter(s => s.missing == true);
-    
             for (const submission of allSubmissions[assignment.id]) {
                 const studentId = submission.userId;
                 if (studentId in submissionsByStudent) {
-                    submission.title = assignment.title;
+                    submission.title       = assignment.title;
+                    submission.possiblePts = assignment.possiblePts;
                     submissionsByStudent[studentId].submissions.push(submission);
                 }
             }
@@ -310,146 +396,46 @@ async function getUnfinishedAssignments(courseId) {
 
 async function getAllAssignments(courseId, studentId) {
     if (!cache.submissionsByStudent[courseId])
-        await getUnfinishedAssignments(courseId);
+        await getAllSubmissions(courseId);
     return cache.submissionsByStudent[courseId][studentId];
-}
-
-//  Get Assignments for the course
-//  What is returned
-//  cache.assignments[courseId] = [ { id: 425, dueAt: "2021-09-01T12:00:00-06:00", lockAt: "2021-09-01T12:00:00-06:00", possiblePts: 100, title: "Assignment 1", hasSubmissions: true } ]
-async function getAssignments(courseId) {
-    if (!cache.assignments[courseId]) {
-        let tmp = await getCanvasData(`/courses/${courseId}/assignments?per_page=100`);
-        let sub = tmp.map(a => { return {
-            "id"             : a.id,
-            "dueAt"          : a.due_at,
-            "lockAt"         : a.lock_at,
-            "possiblePts"    : a.points_possible,
-            "title"          : a.name.padEnd(50),
-            "hasSubmissions" : a.has_submitted_submissions
-            }; 
-        });
-        cache.assignments[courseId] = sub;
-    }
-    return cache.assignments[courseId];
 }
 
 //  Get Submissions by Status
 //  
 //  What is returned?
-//  cache.submissionByStatus[assignmentId] = [ { userId: 123, grade: 90, score: 90, submittedAt: "2021-09-01T12:00:00-06:00", workflowState: "submitted", missing: false } ]
+//  cache.allSubmissions[assignmentId] = [ { userId: 123, grade: 90, score: 90, submittedAt: "2021-09-01T12:00:00-06:00", workflowState: "submitted", missing: false } ]
 async function getSubmissions(courseId, assignmentId, title) {
-    if (!cache.submissionByStatus[assignmentId]) {
-        tmp = await getCanvasData(`/courses/${courseId}/assignments/${assignmentId}/submissions?per_page=100`);
+    if (!cache.allSubmissions[assignmentId]) {
+        tmp = await getCanvasData(`/courses/${courseId}/assignments/${assignmentId}/submissions?per_page=100`, {}, "sub"+assignmentId);
         let sub;
         try {
             sub = tmp.map(a => { return {
-                "userId"        : a.user_id,
-                "grade"         : (a.grade ?? " ").toString().padStart(4),
-                "score"         : (a.score ??   0).toFixed(2).padStart(6, " "),
-                "submittedAt"   : a.submitted_at,
-                "workflowState" : a.workflow_state,
-                "missing"       : a.missing ? "missing" : "done   ",
+                "assignmentId"  : a.assignment_id,
+                "grade"         : (a.grade ?? " ").toString().padStart(2),
+                "gradedAt"      : a.graded_at,
+                "id"            : a.id,
+                "late"          : a.late,
                 "missed"        : a.missing,
+                "missing"       : a.missing ? "missing" : "done   ",
+                "score"         : (a.score ??   0).toFixed(0).padStart(3, " "),
+                "secondsLate"   : a.seconds_late,
+                "submittedAt"   : a.submitted_at,
                 "title"         : title.padStart(50),
+                "userId"        : a.user_id,
+                "workflowState" : a.workflow_state,
             }; 
         });
         } catch (e) {
             console.log(e);
         }
-        cache.submissionByStatus[assignmentId] = sub;
+        cache.allSubmissions[assignmentId] = sub;
     }
-    return cache.submissionByStatus[assignmentId];
-}
-
-function clearCache() {
-    Object.keys(cache).forEach(key => cache[key] = {});
-}
-
-async function startUp(courseId) {
-    await getAllStudentDetails (courseId)       //  _students
-    await getStudentGroup (courseId)       //  _categories
-}
-
-async function getAnnouncements(courseId) {
-    if (!cache.announcements[courseId]) {
-        cache.announcements[courseId] = await getCanvasData(`/courses/${courseId}/discussion_topics?only_announcements=true`);
-    }
-    return cache.announcements[courseId];
-}
-
-async function listAnnouncements(courseId) {
-    announcements = await getAnnouncements(courseId);
-    for (const announcement of announcements) {
-        console.log(`${announcement['id']}  ${announcement['title']}`);
-    }
-}
-
-function getStudentList(courseId) {
-    return cache.studentList[courseId];
-}
-
-async function getStudentProfile(studentId) {
-    return getCanvasData(`/users/${studentId}/profile`)
-}
-
-// Fetch student profile information
-function showStudent(courseId, studentId, name) {
-    let student = cache.studentList[courseId].find(student => student.id === studentId) || null;
-    if (student) {
-        console.log(`\t- ${student.first} ${student.last} ${student.email} ${student.tz}`);
-    } else {
-        console.log(`\t- ${name} has dropped the class`);
-    }
-}
-
-// Get group categories
-async function getCategories(courseId) {
-    if (!cache.categories[courseId]) {
-        cache.categories[courseId] = await getCanvasData(`/courses/${courseId}/group_categories`);
-    }
-    return cache.categories[courseId];
-}
-
-// Get unassigned students in a group category
-async function getUnassigned(groupId) {
-    if (!cache.unassigned[groupId]) {
-        cache.unassigned[groupId] = await getCanvasData(`/group_categories/${groupId}/users?unassigned=true&per_page=100`);
-    }
-    return cache.unassigned[groupId];
-}
-
-//  Get Last Login
-async function getLastLogin(studentId) {
-    if (!cache.lastLogin[studentId]) {
-        cache.lastLogin[studentId] = await getCanvasData(`/users/${studentId}?include[]=last_login`);
-    }
-    return cache.lastLogin[studentId]['last_login'];
-}
-
-//  Get the overal grade and activity time for each student
-//      what is returned?
-//      cache.scores[courseId] = { studentId: { lastActivity: "2021-09-01 12:00", activityTime: 1234, grade: "A", score: 90.0 } }
-async function getCourseActivity(courseId) {
-    if (!cache.scores[courseId]) {
-        cache.enrollments[courseId] = await getCanvasData(`/courses/${courseId}/enrollments?per_page=100&type[]=StudentEnrollment`,{"per_page": 100}); // ATTN:
-
-        cache.scores[courseId] = cache.enrollments[courseId].reduce((acc, student) => {
-            acc[student.user_id] = {
-                "lastActivity": student['last_activity_at'].replace('T', ' ').substring(5, 16),
-                "activityTime": student['total_activity_time'],
-                "grade"       : student['grades']['current_grade'].padEnd(2, " "),
-                "score"       : student['grades']['current_score'].toFixed(2).padStart(6, " "),   
-            }; // Use id as the key
-            return acc;
-        }, {});
-    }
-    return cache.scores[courseId];
+    return cache.allSubmissions[assignmentId];
 }
 
 async function sendStatusLetters(courseId) {
     let list                    = await getStudentList(courseId)
-    let unfinishedAssignments   = await getUnfinishedAssignments(courseId)
+    let unfinishedAssignments   = await getAllSubmissions(courseId)
     const [x, studentList]      = sortByAttr(list, "score");
 
     await statusLetter(courseId, studentList, 90, 100, unfinishedAssignments,
@@ -471,7 +457,11 @@ async function statusLetter(courseId, studentScores, lo, hi, unfinishedAssignmen
     for( let s of studentList) {
         let missed = unfinishedAssignments[s.id].submissions.filter(a => a.missed).map(a => `\t${a.title}`).join("\n") || "";
 
-        console.log(`${s.name} - ${s.score}\n${missed}`);
+        console.log(`${s.first} ${s.last} - ${s.score}`);
+        if (missed.length == 0)
+            continue;
+
+        console.log(`${missed}`);
 
         if (go !== "go") 
             continue;
@@ -483,6 +473,29 @@ async function statusLetter(courseId, studentScores, lo, hi, unfinishedAssignmen
         );
     };
 }
+
+async function getAnnouncements(courseId) {
+    if (!cache.announcements[courseId]) {
+        cache.announcements[courseId] = await getCanvasData(`/courses/${courseId}/discussion_topics?only_announcements=true`, {}, "announcements");
+    }
+    return cache.announcements[courseId];
+}
+
+async function listAnnouncements(courseId) {
+    announcements = await getAnnouncements(courseId);
+    for (const announcement of announcements) {
+        console.log(`${announcement['id']}  ${announcement['title']}`);
+    }
+}
+function clearCache() {
+    Object.keys(cache).forEach(key => cache[key] = {});
+}
+
+async function startUp(courseId) {
+    await getAllStudentDetails (courseId)       //  _students
+    await getStudentGroups (courseId)       //  _categories
+}
+
 // Export the function
 module.exports =  { clearCache, listAnnouncements, startUp, getAllStudentDetails, listTeamMembersByGroup, 
     studentSearch, getGroups, sendStatusLetters, listAssignments, getCategories };

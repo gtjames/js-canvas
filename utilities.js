@@ -117,10 +117,17 @@ async function askQuestion(query) {
     });
 }
 
-async function getCanvasData(endpoint, params={}) {
+async function getCanvasData(endpoint, params={}, file=undefined) {
     try {
+        if (file && fs.existsSync("./cache/"+file)) {
+            console.log(`Reading ${file}`)
+            return readJSON(file);
+        }
         // console.log(`${canvasURL}${endpoint}`);
         const response = await axios.get(`${canvasURL}${endpoint}`, headers, {params});
+        if (file) {
+            writeJSON(file, response.data);
+        }
         return response.data;
     } catch (error) {
         console.error("Error fetching data:", error.response?.data || error.message);
@@ -139,5 +146,20 @@ async function putCanvasData(endpoint, params={}) {
     }
 }
 
+function writeJSON(file, data) {
+    // Write JSON data to file
+    fs.writeFileSync("./cache/"+file, JSON.stringify(data, null, 4));
+    console.log(`Done writing ${file}`)
+}
+
+function readJSON(file) {
+    // Read JSON data from file and parse it back
+    const rawData = fs.readFileSync("./cache/"+file);
+    const data = JSON.parse(rawData);
+    console.log(`Done reading ${file}`)
+    return data;
+}
+
 module.exports = { askQuestion, getCanvasData, putCanvasData, sendMessage, sortByAttr, 
-                getCourseId, setColor, setParams, getURL, setURL, getHeaders};
+                getCourseId, setColor, setParams, getURL, setURL, getHeaders,
+                writeJSON, readJSON};
