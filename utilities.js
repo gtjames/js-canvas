@@ -120,7 +120,6 @@ async function askQuestion(query) {
 async function getCanvasData(endpoint, params={}, file=undefined) {
     try {
         if (file && fs.existsSync("./cache/"+file)) {
-            console.log(`Reading ${file}`)
             return readJSON(file);
         }
         // console.log(`${canvasURL}${endpoint}`);
