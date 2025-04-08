@@ -96,11 +96,11 @@ async function studentSearch(courseId) {
                         size = 0;
                     }
                     size++;
-                    console.log(`${student["first"]} ${student["last"]} : ${student["email"]} : ${student["tz"]}`)
+                    console.log(`${student.first} ${student.last} : ${student.login} : ${student.emai} : ${student.tz}`)
                     break;
                 case    "login"         :
                 case    "lastActivity"  :
-                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}`);
+                    console.log(`${student.first} ${student.last} : ${student.login} : ${student.group} : ${student.lastActivity}`);
             
                     let lastLogin = new Date(student.lastLogin);
                     let aWeekAgo = new Date();
@@ -123,7 +123,7 @@ async function studentSearch(courseId) {
                     break;
                 case    "first"     :
                 case    "tz"        :
-                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.group} : ${student.tz}`);
+                    console.log(`${student.first} ${student.last} : ${student.group} : ${student.email} : ${student.tz}`);
                     break;
                 default :
                     console.log(`${student.first} ${student.last} : ${student.email} : ${student.id}`);
@@ -154,7 +154,7 @@ async function getAllStudentDetails(courseId) {
         
             const   [lastName, rest] = student.sortable_name.split(", ");
             const   firstName = rest.split(" ")[0].padEnd(10).slice(0, 10);
-            const   tm  = scores[student.id]["activityTime"]
+            const tm = scores[student.id]?.activityTime ?? -1;       // ATTN:
             
             const   hrs = Math.floor(tm / 60).toString().padStart(4, " ");
             const   min = (tm % 60).toString().padStart(2, "0");
@@ -203,7 +203,7 @@ async function listAssignments(courseId) {
         } else {
             for (const assignment of displayList) {
                 if (assignment.missed)
-                    console.log(`              ${assignment.title}`); 
+                    console.log(`        ${assignment.title}`); 
                 else
                     console.log(` ${assignment.score}  ${(assignment?.submittedAt || "          T").replace("T", " ").substring(5,11)} ${assignment.title} `); 
             }
@@ -227,7 +227,8 @@ async function getStudentGroups(courseId) {
             let members = await getGroupMembers(group.id);
             for (const member of members) {
                 student = studentList.find(s => s.id === member.id) || null;
-                student.group = group.name.slice(0, 7);
+                if (student)
+                    student.group = group.name.slice(0, 7);
             }
         }
     }
@@ -247,7 +248,7 @@ async function  getUnassigned(catId) {
 //  cache.assignments[courseId] = [ { id: 425, dueAt: "2021-09-01T12:00:00-06:00", lockAt: "2021-09-01T12:00:00-06:00", possiblePts: 100, title: "Assignment 1", hasSubmissions: true } ]
 async function getAssignments(courseId) {
     if (!cache.assignments[courseId]) {
-        let tmp = await getCanvasData(`/courses/${courseId}/assignments?per_page=100`, "assignments");
+        let tmp = await getCanvasData(`/courses/${courseId}/assignments?per_page=50`, {"per_page": 50}, "assignments");
         let sub = tmp.map(a => { return {
             "id"             : a.id,
             "dueAt"          : a.due_at,
@@ -267,7 +268,7 @@ function getStudentList(courseId) {
 }
 
 async function getStudentProfile(studentId) {
-    return getCanvasData(`/users/${studentId}/profile`, {}, ""+studentId)
+    return await getCanvasData(`/users/${studentId}/profile`, {}, "st-"+studentId)
 }
 
 // Fetch student profile information
@@ -285,7 +286,7 @@ function showStudent(courseId, studentId, name) {
 //      cache.scores[courseId] = { studentId: { lastActivity: "2021-09-01 12:00", activityTime: 1234, grade: "A", score: 90.0 } }
 async function getCourseActivity(courseId) {
     if (!cache.scores[courseId]) {
-        cache.enrollments[courseId] = await getCanvasData(`/courses/${courseId}/enrollments?per_page=100&type[]=StudentEnrollment`,{"per_page": 100}, "activity"); // ATTN:
+        cache.enrollments[courseId] = await getCanvasData(`/courses/${courseId}/enrollments?per_page=100&type[]=StudentEnrollment`,{"per_page": 100, "type[]": "StudentEnrollment"}, "activity"); // ATTN:
 
         cache.scores[courseId] = cache.enrollments[courseId].reduce((acc, student) => {
             acc[student.user_id] = {
@@ -339,7 +340,7 @@ async function getCategories(courseId) {
 // Get all groups within the specified group category
 async function getGroups(catId) {
     if (!cache.groups[catId]) {
-        cache.groups[catId] = await getCanvasData(`/group_categories/${catId}/groups?per_page=30`, {}, "groups");
+        cache.groups[catId] = await getCanvasData(`/group_categories/${catId}/groups`, {"per_page": 30}, "grps-"+catId);
     }
     return cache.groups[catId];
 }
@@ -347,7 +348,7 @@ async function getGroups(catId) {
 // Step 2: Get all groups within the specified group category
 async function getGroupMembers(groupId) {
     if (!cache.groupMembers[groupId]) {
-        cache.groupMembers[groupId] = await getCanvasData(`/groups/${groupId}/users?per_page=70`, {}, "groupMembers"+groupId);
+        cache.groupMembers[groupId] = await getCanvasData(`/groups/${groupId}/users`, {"per_page": 70}, "grpMbrs-"+groupId);
     }
     return cache.groupMembers[groupId];
 }
@@ -355,13 +356,14 @@ async function getGroupMembers(groupId) {
 //  Get Last Login
 async function getLastLogin(studentId) {
     if (!cache.lastLogin[studentId]) {
-        cache.lastLogin[studentId] = await getCanvasData(`/users/${studentId}?include[]=last_login`, {}, "lastLogin"+studentId);
+        cache.lastLogin[studentId] = await getCanvasData(`/users/${studentId}`, {"include[]": "last_login"}, "ll-"+studentId);
     }
     return cache.lastLogin[studentId]['last_login'];
 }
 
 async function getAllSubmissions(courseId) {
     if (!cache.submissionsByStudent[courseId]) {
+
         const students    = await getStudentList(courseId);   //  student details
         const assignments = await getAssignments(courseId);     //  assignment details
     
@@ -374,17 +376,15 @@ async function getAllSubmissions(courseId) {
         });
     
         today = new Date();
-        let pastAssisgnments = assignments.filter(a => new Date(a.dueAt) < today);
+        // assignments = assignments.filter(a => new Date(a.dueAt) < today);
 
-        for (const assignment of pastAssisgnments) {    
+        for (const assignment of assignments) {    
             // Fetch all submissions for the assignment
-            allSubmissions[assignment.id] = await getSubmissions(courseId, assignment.id, assignment.title);
+            allSubmissions[assignment.id] = await getSubmissions(courseId, assignment);
 
             for (const submission of allSubmissions[assignment.id]) {
                 const studentId = submission.userId;
                 if (studentId in submissionsByStudent) {
-                    submission.title       = assignment.title;
-                    submission.possiblePts = assignment.possiblePts;
                     submissionsByStudent[studentId].submissions.push(submission);
                 }
             }
@@ -404,9 +404,9 @@ async function getAllAssignments(courseId, studentId) {
 //  
 //  What is returned?
 //  cache.allSubmissions[assignmentId] = [ { userId: 123, grade: 90, score: 90, submittedAt: "2021-09-01T12:00:00-06:00", workflowState: "submitted", missing: false } ]
-async function getSubmissions(courseId, assignmentId, title) {
-    if (!cache.allSubmissions[assignmentId]) {
-        tmp = await getCanvasData(`/courses/${courseId}/assignments/${assignmentId}/submissions?per_page=100`, {}, "sub"+assignmentId);
+async function getSubmissions(courseId, assignment) {
+    if (!cache.allSubmissions[assignment.id]) {
+        tmp = await getCanvasData(`/courses/${courseId}/assignments/${assignment.id}/submissions?per_page=50`, {}, "sub"+assignment.id);
         let sub;
         try {
             sub = tmp.map(a => { return {
@@ -419,32 +419,35 @@ async function getSubmissions(courseId, assignmentId, title) {
                 "missing"       : a.missing ? "missing" : "done   ",
                 "score"         : (a.score ??   0).toFixed(0).padStart(3, " "),
                 "secondsLate"   : a.seconds_late,
-                "submittedAt"   : a.submitted_at,
-                "title"         : title.padStart(50),
+                "submittedAt"   : (a.submitted_at ?? "       T" ).replace('T', ' ').substring(5, 11),
                 "userId"        : a.user_id,
                 "workflowState" : a.workflow_state,
+                "dueAt"         : assignment.dueAt,
+                "possiblePts"   : assignment.possiblePts,
+                "title"         : assignment.title,
             }; 
         });
         } catch (e) {
             console.log(e);
         }
-        cache.allSubmissions[assignmentId] = sub;
+        cache.allSubmissions[assignment.id] = sub;
     }
-    return cache.allSubmissions[assignmentId];
+    return cache.allSubmissions[assignment.id];
 }
 
 async function sendStatusLetters(courseId) {
-    let list                    = await getStudentList(courseId)
-    let unfinishedAssignments   = await getAllSubmissions(courseId)
+    let list             = await getStudentList(courseId)
+    let pastAssisgnments = await getAllSubmissions(courseId)
+
     const [x, studentList]      = sortByAttr(list, "score");
 
-    await statusLetter(courseId, studentList, 90, 100, unfinishedAssignments,
+    await statusLetter(courseId, studentList, 90, 101, pastAssisgnments,
         "Keep up the good work!: Current Score: ",
         "\nYou are doing very well in the class keep up the good work");
-    await statusLetter(courseId, studentList, 70, 90, unfinishedAssignments,
+    await statusLetter(courseId, studentList, 70, 90, pastAssisgnments,
         "You are doing well but might be missing a few assignments: Current Score: ",
         "\nYou can still turn these in until the end of week four");
-    await statusLetter(courseId, studentList, 0, 70, unfinishedAssignments,
+    await statusLetter(courseId, studentList, 0, 70, pastAssisgnments,
         "How are you doing in the class? It looks like you are struggling: Current Score: ",
         "\nHere is a list of your missing assignments. You can still turn these in until the end of week four\nDon't forget there is tutoring available for the class.");
 }
@@ -452,19 +455,19 @@ async function sendStatusLetters(courseId) {
 async function statusLetter(courseId, studentScores, lo, hi, unfinishedAssignments, subject, body) {
     let studentList = studentScores.filter(student => lo < student.score && student.score < hi);
 
-    let go = await askQuestion("go/no go? ");
+    let go         = await askQuestion("go/no go? ") == "go";
+    let showMissed = await askQuestion("Show Missed? ") == "y" ? true : false;
 
     for( let s of studentList) {
         let missed = unfinishedAssignments[s.id].submissions.filter(a => a.missed).map(a => `\t${a.title}`).join("\n") || "";
+        console.log(`${s.score} - ${s.first} ${s.last}`);
 
-        console.log(`${s.first} ${s.last} - ${s.score}`);
-        if (missed.length == 0)
-            continue;
-
-        console.log(`${missed}`);
-
-        if (go !== "go") 
-            continue;
+        today = new Date();
+        let pastAssisgnments = unfinishedAssignments[s.id].submissions.filter(a => new Date(a.dueAt) < today && a.missed);
+       
+        if (missed.length == 0)     continue;
+        if (showMissed)             console.log(missed);
+        if (go)                     continue;
 
         await sendMessage(courseId, 
             [s.id],

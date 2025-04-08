@@ -11,7 +11,7 @@ let school      = "";
 let courseId    = "";
 let API_KEY;
 
-const data = JSON.parse(fs.readFileSync('keys.json', 'utf8'));
+const schoolData = JSON.parse(fs.readFileSync('keys.json', 'utf8'));
 
 // Load API key from 'keys.json'
 try {
@@ -39,8 +39,8 @@ async function setParams() {
     if(process.argv.length > 2)
         courseId = process.argv[2];
     else {
-        school   = await askQuestion("Enter School: ");
-        courseId = await askQuestion("Enter Course: ");
+        // school   = await askQuestion("Enter School: ");
+        // courseId = await askQuestion("Enter Course: ");
     }
     school   = school   || "byupw";
     courseId = courseId || "7113";
@@ -63,7 +63,7 @@ function getURL() {
 
 function setURL(schoolId) {
     canvasURL = `https://${schoolId}.instructure.com/api/v1`;
-    headers   = {headers: { Authorization: `Bearer ${data[schoolId]}` }};
+    headers   = {headers: { Authorization: `Bearer ${schoolData[schoolId]}` }};
 }
 
 function sortByAttr(data, attribute) {
@@ -119,17 +119,26 @@ async function askQuestion(query) {
 
 async function getCanvasData(endpoint, params={}, file=undefined) {
     try {
-        if (file && fs.existsSync("./cache/"+file)) {
+        if (file && fs.existsSync("./cache/"+file+".json")) {
             return readJSON(file);
         }
-        // console.log(`${canvasURL}${endpoint}`);
-        const response = await axios.get(`${canvasURL}${endpoint}`, headers, {params});
+        // console.log(`API ${canvasURL}${endpoint}`);
+
+        const response = await fetch(`${canvasURL}${endpoint}`, headers, params);
+        const jsonData = await response.json();
         if (file) {
-            writeJSON(file, response.data);
+            writeJSON(file, jsonData);
         }
-        return response.data;
+        return jsonData;
+ 
+        // const response = await axios.get(`${canvasURL}${endpoint}`, headers, params);
+        // if (file) {
+        //     writeJSON(file, response.jsonData);
+        // }
+        // return response.jsonData;
     } catch (error) {
         console.error("Error fetching data:", error.response?.data || error.message);
+        console.error("Stack Trace:", error.stack);
         return null;
     }
 }
@@ -147,15 +156,15 @@ async function putCanvasData(endpoint, params={}) {
 
 function writeJSON(file, data) {
     // Write JSON data to file
-    fs.writeFileSync("./cache/"+file, JSON.stringify(data, null, 4));
-    console.log(`Done writing ${file}`)
+    fs.writeFileSync("./cache/"+file+".json", JSON.stringify(data, null, 4));
+    // console.log(`Done writing ${file}`)
 }
 
 function readJSON(file) {
     // Read JSON data from file and parse it back
-    const rawData = fs.readFileSync("./cache/"+file);
+    const rawData = fs.readFileSync("./cache/"+file+".json");
     const data = JSON.parse(rawData);
-    console.log(`Done reading ${file}`)
+    // console.log(`Done reading ${file}`)
     return data;
 }
 
