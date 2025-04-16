@@ -1,4 +1,5 @@
 const { askQuestion, getCanvasData, sendMessage, sortByAttr, getCourseId } = require('./utilities');
+const { x, rowColor} = require('./colors');
 
 const cache = {
     announcements:       {},
@@ -15,6 +16,7 @@ const cache = {
     submissionsByStudent:{},
     unassigned:          {},
 };
+
 async function listTeamMembersByGroup(courseId) {
 
 //  show members in all groups, groups of one or not affiliated with a group
@@ -83,9 +85,9 @@ async function studentSearch(courseId) {
                     let allAssignments = await getAllAssignments(courseId, student.id);
                     let missed         = allAssignments.submissions.filter(a =>   a.missed);
                     let submitted      = allAssignments.submissions.filter(a => ! a.missed);
-                    console.log(`${student.first} ${student.last}\nEmail:\t\t${student.email}\nGroup:\t\t${student.group}\nTime Zone:\t${student.tz}\nLast Login:\t${student.login}\nID:\t\t${student.id}\nScore:\t\t${student["score"]}\nGrade:\t\t${student.grade}\nTime Active:\t${student.activityTime}`);
-                    console.log(`${missed.map(   a => `\t${a.title}\tMissing`).join("\n") || "\tNone Missing"}`);
-                    console.log(`${submitted.map(a => `\t${a.title}\t${a.grade}/${a.possiblePts}\t${a.submittedAt}`).join("\n") || ""}`);
+                    console.log(`${x.reset}${student.first} ${student.last}\nEmail:\t\t${student.email}\nGroup:\t\t${student.group}\nTime Zone:\t${student.tz}\nLast Login:\t${student.login}\nID:\t\t${student.id}\nScore:\t\t${student["score"]}\nGrade:\t\t${student.grade}\nTime Active:\t${student.activityTime}`);
+                    console.log(`${missed.map(   a => `${x.fgBlue}  ${a.title}\t${x.fgRed}Missing`).join("\n") || "\tNone Missing"}`);
+                    console.log(`${submitted.map(a => `${rowColor()}  ${a.title}${a.grade}/${a.possiblePts}  ${a.submittedAt}${x.reset}`).join("\n") || ""}`);
                     break
                 case    "group"     :
                     if (group !== student.group) {
@@ -96,11 +98,11 @@ async function studentSearch(courseId) {
                         size = 0;
                     }
                     size++;
-                    console.log(`${student.first} ${student.last} : ${student.login} : ${student.emai} : ${student.tz}`)
+                    console.log(`${rowColor()}${student.first} ${student.last} : ${student.login} : ${student.emai} : ${student.tz}`)
                     break;
                 case    "login"         :
                 case    "lastActivity"  :
-                    console.log(`${student.first} ${student.last} : ${student.login} : ${student.group} : ${student.lastActivity}`);
+                    console.log(`${rowColor()}${student.first} ${student.last} : ${student.login} : ${student.group} : ${student.lastActivity}`);
             
                     let lastLogin = new Date(student.lastLogin);
                     let aWeekAgo = new Date();
@@ -114,23 +116,23 @@ async function studentSearch(courseId) {
                     }
                     break;
                 case    "id"        :
-                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}`);
+                    console.log(`${rowColor()}${student.first} ${student.last} : ${student.email} : ${student.login} : ${student.id}${x.reset}`);
                     break;
                 case    "score"         :
                 case    "activityTime"  : 
                 case    "grade"         :
-                    console.log(`${student["first"]} ${student["last"]} : ${student["score"]} : ${student["grade"]} : ${student["activityTime"]}`);
+                    console.log(`${rowColor()}${student["first"]} ${student["last"]} : ${student["score"]} : ${student["grade"]} : ${student["activityTime"]}${x.reset}`);
                     break;
                 case    "first"     :
                 case    "tz"        :
-                    console.log(`${student.first} ${student.last} : ${student.group} : ${student.email} : ${student.tz}`);
+                    console.log(`${rowColor()}${student.first} ${student.last} : ${x.fgGreen}${student.group}${rowColor(-1)} : ${student.email} : ${student.tz.padEnd(20)}${x.reset}`);
                     break;
                 default :
-                    console.log(`${student.first} ${student.last} : ${student.email} : ${student.id}`);
+                    console.log(`${rowColor()}${student.first} ${student.last} : ${student.email} : ${student.id}${x.reset}`);
                     break;
             }
         }
-        sortBy = await askQuestion("Sort By (first, last, group, score, login, tz, email, id, search): ");
+        sortBy = await askQuestion(`${x.reset}Sort By (first, last, group, score, login, tz, email, id, search): `);
     }
 }
 
@@ -191,21 +193,22 @@ async function listAssignments(courseId) {
     const missing = await askQuestion("(A)ll / (M)issing?: ");
 
     for (const [studentId, unsub] of Object.entries(submissionsByStudent)) {
-        console.log(`${unsub.name.padEnd(50)} : ${cache.studentsById[courseId][studentId].email}`);
+        console.log(`${x.fgWhite}${x.bright}${x.bgBlack}${unsub.name.padEnd(50)} : ${cache.studentsById[courseId][studentId].email}${x.reset}`);
         let displayList = unsub.submissions;
+        [_ ,displayList] = sortByAttr(displayList, "title");
         if (missing === "m") {
             let missingWork = displayList.filter(asgn => asgn.missed);
             missingList = missingWork.map(a => `\t${a.title}`).join("\n") || "\tAll Assignments are Submitted";
-            console.log(missingList);
+            console.log(x.fgRed+missingList+x.reset);
             if (notify === "y" && missingWork.length > 0) {
                 await sendMessage(courseId, [`'${studentId}'`], "Missing Assignments", `${msg}\n\n\t${missingWork}`);
             }
         } else {
             for (const assignment of displayList) {
                 if (assignment.missed)
-                    console.log(`        ${assignment.title}`); 
+                    console.log(` ${x.fgRed} Missing      ${x.fgBlue}${assignment.title}${x.reset}`); 
                 else
-                    console.log(` ${assignment.score}  ${(assignment?.submittedAt || "          T").replace("T", " ").substring(5,11)} ${assignment.title} `); 
+                    console.log(` ${assignment.score}/${assignment.possiblePts}  ${assignment.submittedAt} ${x.fgBlue}${assignment.title}${x.reset}`); 
             }
         }
     }
@@ -254,7 +257,7 @@ async function getAssignments(courseId) {
             "dueAt"          : a.due_at,
             "lockAt"         : a.lock_at,
             "possiblePts"    : a.points_possible.toFixed(0).padStart(3, " "),
-            "title"          : a.name.padEnd(50),
+            "title"          : a.name.padEnd(60),
             "hasSubmissions" : a.has_submitted_submissions
             }; 
         });
@@ -419,7 +422,7 @@ async function getSubmissions(courseId, assignment) {
                 "missing"       : a.missing ? "missing" : "done   ",
                 "score"         : (a.score ??   0).toFixed(0).padStart(3, " "),
                 "secondsLate"   : a.seconds_late,
-                "submittedAt"   : (a.submitted_at ?? "       T" ).replace('T', ' ').substring(5, 11),
+                "submittedAt"   : (a.submitted_at ?? "              " ).substring(6,10),
                 "userId"        : a.user_id,
                 "workflowState" : a.workflow_state,
                 "dueAt"         : assignment.dueAt,
@@ -466,7 +469,7 @@ async function statusLetter(courseId, studentScores, lo, hi, unfinishedAssignmen
         let pastAssisgnments = unfinishedAssignments[s.id].submissions.filter(a => new Date(a.dueAt) < today && a.missed);
        
         if (missed.length == 0)     continue;
-        if (showMissed)             console.log(missed);
+        if (showMissed)             console.log(x.fgRed+missed+x.reset);
         if (go)                     continue;
 
         await sendMessage(courseId, 
