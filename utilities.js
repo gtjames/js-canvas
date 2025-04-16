@@ -39,8 +39,8 @@ async function setParams() {
     if(process.argv.length > 2)
         courseId = process.argv[2];
     else {
-        // school   = await askQuestion("Enter School: ");
-        // courseId = await askQuestion("Enter Course: ");
+        school   = await askQuestion("Enter School: ");
+        courseId = await askQuestion("Enter Course: ");
     }
     school   = school   || "byupw";
     courseId = courseId || "7113";
